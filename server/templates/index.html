@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="description" content="Dashboard" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+        <link rel="stylesheet" type="text/css" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" >
+        <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css" >
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+    </head>
+    <body>
+        <div class="container">
+            <div class="row">
+                <div class="col-md-12">
+                    <h1 class="text-center">Charts</h1>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6">
+                    <h3 class="text-center">Record Mode</h3>
+                    <div class="row">
+                        <form id="record-form">
+                            <div class="col-md-12">
+                            <input type="radio" class="record-mode" name="record-mode" value="true"> Record | 
+                            <input type="radio" class="record-mode" name="record-mode" value="false"> Don't Record
+                                <hr /> 
+                            </div>
+                            <div class="col-md-12">
+                                <input type="checkbox" class="record-device" id=record-all name="record-device-all" value="All"> All 
+                                <hr /> 
+                            </div>
+                            {{ range $index, $value := .DeviceRecording }}
+                                <div class="col-md-12">
+                                    <input type="checkbox" class="record-device" name="record-device" value="{{$index}}"> {{$index}}
+
+                                    {{ if $value }}
+                                        <span class="pull-right"> Mode: <span class="mode-text" data-device-name="{{$index}}" style="color:green">Recording</span></span>
+                                    {{ else }}
+                                        <span class="pull-right"> Mode: <span class="mode-text" data-device-name="{{$index}}" style="color:red">Not Recording</span></span>
+                                    {{ end }}
+                                </div> 
+                                <!-- <div class="col-md-5">
+                                    <input type="checkbox" class="record-device" name="record-device" value="{{$index}}"> {{$index}}
+                                </div> 
+                                <div class="col-md-7">
+                                    {{ if $value }}
+                                        Mode: <span class="mode-text" data-device-name="{{$index}}" style="color:green">Record</span>
+                                    {{ else }}
+                                        Mode: <span class="mode-text" data-device-name="{{$index}}" style="color:red">Don't Record</span>
+                                    {{ end }}
+                                </div>   -->
+                            {{ end }}
+                            <div class="col-md-12">
+                                <div class="form-group">
+                                    <input type="text" name="password" class="form-control" id="record-password" placeholder="Password">
+                                </div>
+                                <button type="button" id="record-submit" class="btn btn-primary">Submit</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <h3 class="text-center">New Set</h3>
+                    <div class="row">
+                        <form id="new-set-form">
+                            <div class="col-md-12">
+                                <input type="checkbox" id=new-set-all name="new-set-all"> All 
+                                <hr />
+                            </div>
+                            {{ range $index, $value := .DeviceSet }}
+                                <div class="col-md-12">
+                                    <input type="checkbox" class="new-set" name="new-set" value="{{$index}}"> {{$index}}
+                                    <span class="pull-right">Set: <span class="new-set-text" data-new-set-device="{{ $index }}">{{ $value }}</span></span>
+                                </div> 
+                            {{ end }}
+                            <div class="col-md-12">
+                                <div class="form-group">
+                                    <input type="text" name="password" class="form-control" id="new-set-password" placeholder="Password">
+                                </div>
+                                <button type="button" id="new-set-submit" name="new-set-submit" class="btn btn-primary">Submit</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6">
+                    <h3 class="text-center">Choose Chart</h3>
+                    <input type="radio" class="chart-radio" id=hour-chart name="chart-radio"> 1 Hour <br/>
+                    <input type="radio" class="chart-radio" id=day-chart name="chart-radio"> 24 Hour <br/>
+                    <input type="radio" class="chart-radio" id=week-chart name="chart-radio"> Week
+                </div>
+                <div class="col-md-6">
+                    <h3 class="text-center">Warnings</h3>
+                    <div id="warning-section" style="color:red; font-size:16px"></div>
+                </div>
+            </div>
+        </div>
+    </body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.18.1/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" type="text/javacsript"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/1.0.2/Chart.min.js" type="text/javacsript"></script>
+
+    <script>
+        function updateChartHandler(timeMeasure){
+            $.ajax({
+                url: "/update-chart-handler/",
+                method: "GET",
+                data: {timeMeasure: timeMeasure},
+                success: function(result){
+            
+                },
+                error: function(xhr, status, stringMessage){
+                    toastr.error(xhr.responseText);
+                }
+            });
+        }
+
+        function newSetSubmitHandler(){
+            $("#new-set-submit").on("click", function(e){
+                var serialize = $("#new-set-form").serialize();
+                $.ajax({
+                    url: "/new-set/",
+                    method: "POST",
+                    data: serialize,
+                    success: function(result){
+                        var result = JSON.parse(result);
+                        
+                        $(".new-set-text").each(function(i, item){
+                            var deviceName = $(this).attr('data-new-set-device');
+                            var setNumber = result[deviceName];
+                            $(this).html(setNumber);
+                        });
+
+                    },
+                    error: function(xhr, status, message){
+                        toastr.error(xhr.responseText);
+                    }
+                })
+            });
+        }
+
+        function statusesHandler(){
+            $.ajax({
+                url: "/update-status-handler/",
+                success: function(result){
+                    var result = JSON.parse(result),
+                        displayString = "";
+
+                    if(Object.keys(result).length === 0){
+                        $("#warning-section").html("");
+                    }
+                    else{
+                        for (var property in result) {
+                            if (result.hasOwnProperty(property)) {
+                                displayString += "Last heard device '" + property + "' at " + moment(result[property]).format("MM/DD/YYYY H:mm:ss") + " <br />";
+                                console.log(result[property]);
+                            }
+                        }
+                        $("#warning-section").html(displayString);
+                    }
+                },
+                error: function(xhr, status, message){
+
+                }
+            });
+        }
+
+        function recordSubmitHandler(){
+            $("#record-submit").on("click", function(e){
+                var serialize = $("#record-form").serialize();
+                $.ajax({
+                    url: "/record-mode-handler/",
+                    data: serialize,
+                    method: "POST",
+                    success: function(result){
+                        var result = JSON.parse(result);
+                        $(".mode-text").each(function(i, item){
+                            var deviceName = $(this).attr('data-device-name');
+                            console.log(deviceName);
+                            var recordMode = result[deviceName];
+                            console.log(recordMode);
+                            if(recordMode){
+                                $(this).css('color', 'green').html("Recording");
+                            }else{
+                                $(this).css('color', 'red').html("Not Recording");
+                            }
+
+                            $("#record-password").val("");
+                            $(".record-device").each(function(i, item){
+                                $(this).prop('checked', false);
+                            });
+                        });
+                        console.log(result);
+                        toastr.success("Record mode has been changed for selected devices");
+                    },
+                    error: function(xhr, status, message){
+                        toastr.error(xhr.responseText);
+                    }
+                });
+            });
+        }
+
+        function newSetCheckboxHandler(){
+            $("#new-set-all").on("click", function(e){
+                if($(this).is(":checked")){
+                    $(".new-set").each(function(i, item){
+                        $(this).prop('checked', true);
+                    });
+                }
+                else{
+                    $(".new-set").each(function(i, item){
+                        $(this).prop('checked', false);
+                    });
+                }
+            });
+        }
+
+        function recordCheckboxHandler(){
+            $("#record-all").on("click", function(e){
+                if($(this).is(":checked")){
+                    $(".record-device").each(function(i, item){
+                        $(this).prop('checked', true);
+                    });
+                }
+                else{
+                    $(".record-device").each(function(i, item){
+                        $(this).prop('checked', false);
+                    });
+                }
+            });
+        }
+
+        $(document).ready(function(){
+            $(".record-mode").first().prop('checked', true);
+            $(".chart-radio").first().prop('checked', true);
+            newSetCheckboxHandler();
+            recordCheckboxHandler();
+            recordSubmitHandler();
+            newSetSubmitHandler()
+            // getData("all");
+            window.setInterval(statusesHandler, 1000);
+        });
+    </script>
+
+</html>

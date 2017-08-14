@@ -1,0 +1,5 @@
+*.vscode
+*.pyc
+client
+debug
+__pycache__
