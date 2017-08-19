@@ -1,5 +1,6 @@
 *.vscode
 *.pyc
+*.db
 client
 debug
 __pycache__

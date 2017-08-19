@@ -31,7 +31,7 @@
                                 <input type="checkbox" class="record-device" id=record-all name="record-device-all" value="All"> All 
                                 <hr /> 
                             </div>
-                            {{ range $index, $value := .DeviceRecording }}
+                            {{ range $index, $value := .IsDeviceRecording }}
                                 <div class="col-md-12">
                                     <input type="checkbox" class="record-device" name="record-device" value="{{$index}}"> {{$index}}
 
@@ -127,6 +127,12 @@
                     method: "POST",
                     data: serialize,
                     success: function(result){
+                        toastr.success("New set created for selected devices");
+                        $("#new-set-password").val("");
+                        $("#new-set-all").prop('checked', false);
+                        $(".new-set").each(function(i, item){
+                            $(this).prop('checked', false);
+                        });
                         var result = JSON.parse(result);
                         
                         $(".new-set-text").each(function(i, item){
@@ -134,6 +140,8 @@
                             var setNumber = result[deviceName];
                             $(this).html(setNumber);
                         });
+
+
 
                     },
                     error: function(xhr, status, message){
@@ -204,6 +212,13 @@
             });
         }
 
+        function substractSet(){
+            $(".new-set-text").each(function(i, item){
+                var setNumber = parseInt($(this).html()) - 1;
+                $(this).html(setNumber);
+            });
+        }
+
         function newSetCheckboxHandler(){
             $("#new-set-all").on("click", function(e){
                 if($(this).is(":checked")){
@@ -240,7 +255,8 @@
             newSetCheckboxHandler();
             recordCheckboxHandler();
             recordSubmitHandler();
-            newSetSubmitHandler()
+            newSetSubmitHandler();
+            substractSet();
             // getData("all");
             window.setInterval(statusesHandler, 1000);
         });

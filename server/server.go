@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"html/template"
-	"log"
 	"net/http"
 	"sync"
 
@@ -16,24 +15,21 @@ var (
 	tpl          *template.Template
 	deviceCenter *devices
 	db           *sql.DB
+	server       *http.Server
+	setting      settings
 )
 
 const (
-	timeOut     = -5
-	logFilePath = "csv/logfile.csv"
+	logFilePath       = "csv/logfile.csv"
+	setsDirectoryPath = "csv/sets"
 )
 
 func init() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	var err error
-	tpl = template.Must(template.ParseGlob("templates/*.html"))
-	db, err = sql.Open("sqlite3", "server.db")
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	initDeviceCenter()
+	initLogger()
+	loadSettingsFile()
+	commandLineArgs()
+	initDatabase()
+	initGlobalVariables()
 }
 
 func main() {
@@ -46,10 +42,17 @@ func main() {
 	http.HandleFunc("/update-status-handler/", updateStatusHandler)
 	http.HandleFunc("/sensor-handler/", sensorHandler)
 	http.HandleFunc("/update-chart-handler/", updateChartHandler)
+	http.HandleFunc("/check-in-handler/", deviceCheckInHandler)
 
-	err := http.ListenAndServe(":8003", nil) // set listen port
-	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
+	fmt.Println("here")
+	go updateCheckIn()
+
+	if setting.HTTPS {
+		// server.Addr = "https://" + setting.IPAddress + setting.Port
+		// err := server.ListenAndServeTLS()
+		// checkError(err, "Listen and server tls", true)
+	} else {
+		err := server.ListenAndServe()
+		checkError(err, "Listen and server", true)
 	}
-	http.ListenAndServe("192.168.1.3:8003", nil)
 }
