@@ -1,6 +1,6 @@
 *.vscode
 *.pyc
 *.db
-client
+*.csv
 debug
 __pycache__
