@@ -2,12 +2,6 @@ import os
 
 
 class Device():
-    # is_recording = True
-    # has_internet = True
-    # had_internet_before = True
-    # has_new_set_not_recording = False
-    # current_set = 1
-
     def __init__(self, device_name="Client", ip_address="localhost:8003", sleep=.5, is_recording=True,
     has_internet=True, had_internet_before=True, has_new_set_not_recording=True, current_set=1, password="test",
     https=True, is_checked_in=False):

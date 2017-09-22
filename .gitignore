@@ -2,5 +2,6 @@
 *.pyc
 *.db
 *.csv
+*.idea
 debug
 __pycache__

@@ -49,6 +49,7 @@ func deviceCheckInHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// If device is already checked in, return with warning message
 	if alreadyCheckedIn {
 		w.WriteHeader(http.StatusNotAcceptable)
 		w.Write([]byte("Already checked in"))
@@ -113,6 +114,7 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 
 	devices := r.Form.Get("new-set")
 
+	// If no device names were passed, return and write error message to writer
 	if devices == "" {
 		w.WriteHeader(http.StatusNotAcceptable)
 		w.Write([]byte("Must select at least one device to start new set"))
@@ -125,23 +127,26 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 	var message string
 	deviceSet := make(map[string]string)
 	sqlUpdate := "UPDATE device_status SET is_new_set=1, device_set=? WHERE device_status.device_name=?"
-	isSendPayload := true
+	// isSendPayload := true
 
 	for _, deviceName := range r.Form["new-set"] {
 		// Check if device is even registered
 		isNewDeviceSet, ok := deviceCenter.IsNewDeviceSet[deviceName]
 
-		// If device is not registered, return add error message
+		// If device is not registered, return and add error message
 		// Else if the device is still considered in "new set" mode
-		// return error message as this indicates that the device has not
+		// return with error message as this indicates that the device has not
 		// signaled back that it has started it's new set locally
+		// Else
 		if !ok {
-			isSendPayload = false
+			// isSendPayload = false
 			message += "Device " + deviceName + " is not registered \n"
+			continue
 		} else {
 			if isNewDeviceSet {
-				isSendPayload = false
-				message += "Device " + deviceName + " still hasn't reset to new set"
+				// isSendPayload = false
+				message += "Device " + deviceName + " still hasn't reset to new set \n"
+				continue
 			} else {
 				currentCSVFilePath := filepath.Join("csv", deviceName+".csv")
 				deviceSetDirectory := filepath.Join(setsDirectoryPath, deviceName)
@@ -157,6 +162,10 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 					log.Fatal(err)
 				}
 
+				// If device directory has no files in it, then we insert the first
+				// csv file in the set
+				// Else calculate what the next file name should be.  Since file names
+				// are just numbers, we just simply increment from the last file name
 				if len(fileInfoArray) == 0 {
 					newFile, err = os.OpenFile(filepath.Join(deviceSetDirectory, "1.csv"), os.O_WRONLY|os.O_CREATE, os.ModePerm)
 
@@ -192,6 +201,8 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 
 				newFile.Close()
 				currentCSVFile.Close()
+
+				// Simply calling create to overwrite current file
 				_, err = os.Create(currentCSVFilePath)
 
 				if err != nil {
@@ -207,12 +218,15 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if isSendPayload {
-		sendPayload(w, deviceSet)
-	} else {
-		w.WriteHeader(http.StatusNotAcceptable)
-		w.Write([]byte(message))
-	}
+	sendPayload(w, deviceSet)
+
+	// If isSendPayload is true, that means we successfully started
+	// if isSendPayload {
+	// 	sendPayload(w, deviceSet)
+	// } else {
+	// 	w.WriteHeader(http.StatusNotAcceptable)
+	// 	w.Write([]byte(message))
+	// }
 }
 
 func reloadCSVHandler(w http.ResponseWriter, r *http.Request) {
@@ -323,9 +337,11 @@ func updateStatusHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // deviceStatusHandler is an api end point that checks if passed
-// device name is allowed to record or not
+// device name is allowed to record or not or if the device needs
+// to start a new set
 // This api will be pinged by a device that has stopped recording and will
-// continue to check if the device is allowed to record again
+// continue to check if the device is allowed to record again or start new
+// set while not recording
 func deviceStatusHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("device record")
 	message := ""

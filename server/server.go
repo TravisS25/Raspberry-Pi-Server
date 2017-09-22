@@ -20,7 +20,6 @@ var (
 )
 
 const (
-	logFilePath       = "csv/logfile.csv"
 	setsDirectoryPath = "csv/sets"
 )
 

@@ -11,6 +11,6 @@ This project allows a user to set up a server and connect an arbitray amount of 
 
 The client will send this information based on -s --sleep option passed (.5 default) whether motion is detected or not.   
 
-On the server, it takes the information passed and writes it to its own csv file based on device name but again only prints when motion is detected.  Reason for constant pinging no matter if motion is detected or not is to simply an indacator that the device is still on/running.  A timestamp is kept for each device and has a default timeout of 5 sec so if a device is not heard from after that, a warning message with the device name and timestamp of the last time its been heard from will pop up on the webpage.
+On the server, it takes the information passed and writes it to its own csv file based on device name but again only prints when motion is detected.  Reason for constant pinging no matter if motion is detected or not is to simply indicate that the device is still on/running.  A timestamp is kept for each device and has a default timeout of 5 sec so if a device is not heard from after that, a warning message with the device name and timestamp of the last time its been heard from will pop up on the webpage.
 
  
