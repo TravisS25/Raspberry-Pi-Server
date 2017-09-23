@@ -8,13 +8,15 @@ import sqlite3
 import sys
 import shutil
 import device
-import const
 import getopt
 import configparser
 import random
 
 
 CONFIG = configparser.ConfigParser()
+SETS_DIRECTORY = "csv/sets"
+# CSV_FILE = "csv/client.csv"
+
 
 def _check_in_device(pi_device):
     """
@@ -182,8 +184,8 @@ def _init_file_system(pi_device):
     """
     Initializes file system with proper directories and files needed
     """
-    if not os.path.isdir(os.path.join(const.SETS_DIRECTORY, pi_device.device_name)):
-        os.makedirs(os.path.join(const.SETS_DIRECTORY, pi_device.device_name))
+    if not os.path.isdir(os.path.join(SETS_DIRECTORY, pi_device.device_name)):
+        os.makedirs(os.path.join(SETS_DIRECTORY, pi_device.device_name))
 
     if not os.path.exists(pi_device.csv_file):
         with open(pi_device.csv_file, 'w') as f:
@@ -263,13 +265,6 @@ def init(pi_device):
                         if item == "Stop Recording":
                             pi_device.is_recording = False
                             CONFIG["device"]["is_recording"] = "False"
-                        if item == "New Set":
-                            set_csv_file = os.path.join(const.SETS_DIRECTORY, pi_device.device_name, str(pi_device.current_set) + ".csv")
-                            pi_device.current_set = pi_device.current_set + 1
-                            CONFIG["device"]["device_set"] = pi_device.current_set
-                            copyfile(pi_device.csv_file, set_csv_file)
-                            csv_file = open(CSV_FILE, 'w')
-                            csv_file.close()
                         if item == "Wrong Password":
                             print(item + ", not writing to server but still locally...")
                         if item == "Device does not exist":
@@ -316,7 +311,7 @@ def init(pi_device):
                         CONFIG["device"]["is_recording"] = "True"
                     if item == "New Set" and not pi_device.has_new_set_not_recording:
                         print("new set while not recording")
-                        set_csv_file = os.path.join(const.SETS_DIRECTORY, pi_device.device_name, str(pi_device.current_set) + ".csv")
+                        set_csv_file = os.path.join(SETS_DIRECTORY, pi_device.device_name, str(pi_device.current_set) + ".csv")
                         # print("previous current set " + str(pi_device.current_set))
                         pi_device.current_set = pi_device.current_set + 1
                         # print("new current set " + str(pi_device.current_set))
@@ -373,12 +368,20 @@ if __name__ == '__main__':
                     os.remove(os.path.join("csv", pi_device.device_name + ".csv"))
                     shutil.rmtree(os.path.join("csv", "sets", pi_device.device_name))
 
+                    pi_device.has_internet = True
+                    pi_device.had_internet_before = True
+                    pi_device.has_new_set_not_recording = False
+                    pi_device.is_recording = True
+                    pi_device.current_set = 1
+
                     CONFIG["device"]["has_internet"] = "True"
                     CONFIG["device"]["had_internet_before"] = "True"
                     CONFIG["device"]["has_new_set_not_recording"] = "False"
                     CONFIG["device"]["is_recording"] = "True"
                     CONFIG["device"]["device_set"] = "1"
 
+                    with open("client.ini", "w+") as config_file:
+                        CONFIG.write(config_file)
                 else:
                     print("Nothing was deleted")
 

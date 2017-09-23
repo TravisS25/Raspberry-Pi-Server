@@ -189,15 +189,16 @@ func initGlobalVariables() {
 			log.Fatal(err)
 		}
 
-		convertedTime, err := time.Parse("2006-01-02 15:04:05", deviceTime)
+		// arrayTime := strings.Split(deviceTime, ".")
+		// convertedTime, err := time.Parse("2006-01-02 15:04:05", arrayTime[0])
 
-		if err != nil {
-			log.Fatal(err)
-		}
+		// if err != nil {
+		// 	log.Fatal(err)
+		// }
 
 		deviceCenter.DeviceNames = append(deviceCenter.DeviceNames, deviceName)
 		deviceCenter.DeviceSet[deviceName] = deviceSet
-		deviceCenter.DeviceTime[deviceName] = convertedTime
+		deviceCenter.DeviceTime[deviceName] = time.Now()
 		deviceCenter.IsDeviceRecording[deviceName] = isRecording
 		deviceCenter.IsNewDeviceSet[deviceName] = isNewSet
 		deviceCenter.IsDeviceCheckedIn[deviceName] = isDeviceCheckedIn
@@ -246,7 +247,12 @@ func handlePostRequests(w http.ResponseWriter, r *http.Request) (err error) {
 
 // updateCheckIn will be run on a seperate go routine and will loop
 // through deviceCenter to see if any device have not been heard from
-// based on the timeOut setting
+// based on the timeOut setting.  If a device hasn't been heard from
+// based on timeOut, we change deviceCenter check in based on device
+// The updateStatusHandler api end point is used in conjunction with
+// this function as this function changes check in status for device and
+// updateStatusHandler will use check in status to display message
+// on webpage
 func updateCheckIn() {
 	sleepDuration := time.Duration(setting.TimeOut) * time.Second
 
@@ -257,7 +263,8 @@ func updateCheckIn() {
 
 		for deviceName, deviceTime := range deviceCenter.DeviceTime {
 			duration := time.Duration(-setting.TimeOut) * time.Second
-			if deviceTime.Before(time.Now().Add(duration)) && deviceCenter.IsDeviceRecording[deviceName] {
+			// if deviceTime.Before(time.Now().Add(duration)) && deviceCenter.IsDeviceRecording[deviceName] {
+			if deviceTime.Before(time.Now().Add(duration)) {
 				fmt.Println("not heard from " + deviceName)
 				devicesNotHeardFrom[deviceName] = deviceTime
 			} else {

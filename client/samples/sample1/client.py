@@ -42,11 +42,20 @@ def _check_in_device(pi_device):
         # to write locally 
         # Else we tell current device it is signed in
         if result == "Already checked in":
+            pi_device.is_checked_in = False
             CONFIG["device"]["is_checked_in"] = "False"
             print("Device name is already in use, not sending to server but still running locally...")
         else:
+            print(result)
             pi_device.is_checked_in = True
+            pi_device.has_new_set_not_recording = result["hasNewSetNotRecording"]
+            pi_device.current_set = result["deviceSet"]
+            pi_device.is_recording = result["isRecording"]
+
             CONFIG["device"]["is_checked_in"] = "True"
+            CONFIG["device"]["has_new_set_not_recording"] = result["hasNewSetNotRecording"]
+            CONFIG["device"]["current_set"] = result["deviceSet"]
+            CONFIG["deivce"]["is_recording"] = result["isRecording"]
     
     # Reaches exception if we could not connect to server
     except Exception as e:
@@ -381,6 +390,8 @@ if __name__ == '__main__':
                 CONFIG["device"]["has_new_set_not_recording"] = "False"
                 CONFIG["device"]["is_recording"] = "True"
                 CONFIG["device"]["device_set"] = "1"
+
+                print("Getting within command line")
 
                 with open("client.ini", "w+") as config_file:
                     CONFIG.write(config_file)

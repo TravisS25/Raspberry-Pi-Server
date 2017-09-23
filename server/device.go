@@ -21,6 +21,12 @@ type chart struct {
 	Axises      map[int]int `json:"axises"`
 }
 
+type chartRow struct {
+	DeviceName string
+	NumOfSets  int
+	FileNames  []string
+}
+
 type settings struct {
 	IPAddress string
 	Port      string

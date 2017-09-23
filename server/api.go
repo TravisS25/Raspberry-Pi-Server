@@ -16,7 +16,41 @@ import (
 
 // mainView displays the main html page with charts
 func mainView(w http.ResponseWriter, r *http.Request) {
-	tpl.ExecuteTemplate(w, "index.html", deviceCenter)
+	fileInfoArray, err := ioutil.ReadDir(filepath.Join("csv", "sets"))
+
+	if err != nil {
+		log.Fatal()
+	}
+
+	chartRows := make([]chartRow, 0)
+
+	for _, fileInfo := range fileInfoArray {
+		deviceName := fileInfo.Name()
+		deviceContents, err := ioutil.ReadDir(deviceName)
+		fileNames := make([]string, 0)
+
+		if err != nil {
+			log.Fatal()
+		}
+
+		for _, file := range deviceContents {
+			fileNames = append(fileNames, file.Name())
+		}
+
+		cell := chartRow{
+			DeviceName: deviceName,
+			NumOfSets:  len(deviceContents),
+			FileNames:  fileNames,
+		}
+
+		chartRows = append(chartRows, cell)
+	}
+
+	context := map[string]interface{}{
+		"deviceCenter": deviceCenter,
+		"chartRows":    chartRows,
+	}
+	tpl.ExecuteTemplate(w, "index.html", context)
 }
 
 // deviceCheckInHandler is an api endpoint that either adds new devices to our
@@ -95,6 +129,17 @@ func deviceCheckInHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if !alreadyCheckedIn {
+		deviceCenter.RLock()
+		payLoad := map[string]interface{}{
+			"hasNewSetNotRecording": deviceCenter.IsNewDeviceSet[deviceName],
+			"isRecording":           deviceCenter.IsDeviceRecording[deviceName],
+			"deviceSet":             deviceCenter.DeviceSet[deviceName],
+		}
+		deviceCenter.RUnlock()
+		sendPayload(w, payLoad)
+	}
+
 	// If current request is from new device, create directory with device
 	// name under the sets directory
 	err = os.MkdirAll(filepath.Join("csv", "sets", deviceName), os.ModePerm)
@@ -121,17 +166,18 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mu.Lock()
-	defer mu.Unlock()
 	var newFile *os.File
 	var message string
 	deviceSet := make(map[string]string)
+	payLoad := make(map[string]interface{})
 	sqlUpdate := "UPDATE device_status SET is_new_set=1, device_set=? WHERE device_status.device_name=?"
-	// isSendPayload := true
 
 	for _, deviceName := range r.Form["new-set"] {
+		deviceCenter.RLock()
 		// Check if device is even registered
 		isNewDeviceSet, ok := deviceCenter.IsNewDeviceSet[deviceName]
+		isDeviceRecording, _ := deviceCenter.IsDeviceRecording[deviceName]
+		deviceCenter.RUnlock()
 
 		// If device is not registered, return and add error message
 		// Else if the device is still considered in "new set" mode
@@ -139,94 +185,95 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 		// signaled back that it has started it's new set locally
 		// Else
 		if !ok {
-			// isSendPayload = false
-			message += "Device " + deviceName + " is not registered \n"
+			message += deviceName + " is not registered <br /> "
 			continue
 		} else {
-			if isNewDeviceSet {
-				// isSendPayload = false
-				message += "Device " + deviceName + " still hasn't reset to new set \n"
+			if isDeviceRecording {
+				message += deviceName + " is recording.  Can only start new set when " +
+					"device is NOT recording <br /> "
 				continue
-			} else {
-				currentCSVFilePath := filepath.Join("csv", deviceName+".csv")
-				deviceSetDirectory := filepath.Join(setsDirectoryPath, deviceName)
-				fileInfoArray, err := ioutil.ReadDir(deviceSetDirectory)
-
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				currentCSVFile, err := os.Open(currentCSVFilePath)
-
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				// If device directory has no files in it, then we insert the first
-				// csv file in the set
-				// Else calculate what the next file name should be.  Since file names
-				// are just numbers, we just simply increment from the last file name
-				if len(fileInfoArray) == 0 {
-					newFile, err = os.OpenFile(filepath.Join(deviceSetDirectory, "1.csv"), os.O_WRONLY|os.O_CREATE, os.ModePerm)
-
-					if err != nil {
-						log.Fatal(err)
-					}
-
-					deviceSet[deviceName] = "1"
-					io.Copy(newFile, currentCSVFile)
-				} else {
-					lastFileInfo := fileInfoArray[len(fileInfoArray)-1]
-					newFileName, err := strconv.Atoi(strings.Split(lastFileInfo.Name(), ".")[0])
-
-					if err != nil {
-						log.Fatal(err)
-					}
-
-					newFileName++
-					stringFileName := strconv.Itoa(newFileName)
-					newFile, err := os.OpenFile(filepath.Join(deviceSetDirectory, stringFileName+".csv"), os.O_WRONLY|os.O_CREATE, os.ModePerm)
-
-					if err != nil {
-						log.Fatal(err)
-					}
-
-					deviceSet[deviceName] = stringFileName
-					_, err = io.Copy(newFile, currentCSVFile)
-
-					if err != nil {
-						log.Fatal(err)
-					}
-				}
-
-				newFile.Close()
-				currentCSVFile.Close()
-
-				// Simply calling create to overwrite current file
-				_, err = os.Create(currentCSVFilePath)
-
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				deviceCenter.Lock()
-				deviceCenter.IsNewDeviceSet[deviceName] = true
-				deviceCenter.DeviceSet[deviceName]++
-				deviceCenter.Unlock()
-				execTXQuery(sqlUpdate, deviceCenter.DeviceSet[deviceName], deviceName)
 			}
+			if isNewDeviceSet {
+				message += deviceName + " still hasn't reset to new set <br /> "
+				continue
+			}
+
+			mu.Lock()
+			currentCSVFilePath := filepath.Join("csv", deviceName+".csv")
+			deviceSetDirectory := filepath.Join(setsDirectoryPath, deviceName)
+			fileInfoArray, err := ioutil.ReadDir(deviceSetDirectory)
+
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			currentCSVFile, err := os.Open(currentCSVFilePath)
+
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			// If device directory has no files in it, then we insert the first
+			// csv file in the set
+			// Else calculate what the next file name should be.  Since file names
+			// are just numbers, we just simply increment from the last file name
+			if len(fileInfoArray) == 0 {
+				newFile, err = os.OpenFile(filepath.Join(deviceSetDirectory, "1.csv"), os.O_WRONLY|os.O_CREATE, os.ModePerm)
+
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				deviceSet[deviceName] = "1"
+				io.Copy(newFile, currentCSVFile)
+			} else {
+				lastFileInfo := fileInfoArray[len(fileInfoArray)-1]
+				newFileName, err := strconv.Atoi(strings.Split(lastFileInfo.Name(), ".")[0])
+
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				newFileName++
+				stringFileName := strconv.Itoa(newFileName)
+				newFile, err := os.OpenFile(filepath.Join(deviceSetDirectory, stringFileName+".csv"), os.O_WRONLY|os.O_CREATE, os.ModePerm)
+
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				deviceSet[deviceName] = stringFileName
+				_, err = io.Copy(newFile, currentCSVFile)
+
+				if err != nil {
+					log.Fatal(err)
+				}
+			}
+
+			newFile.Close()
+			currentCSVFile.Close()
+
+			// Simply calling create to overwrite current file
+			_, err = os.Create(currentCSVFilePath)
+
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			mu.Unlock()
+
+			deviceCenter.Lock()
+			deviceCenter.IsNewDeviceSet[deviceName] = true
+			deviceCenter.DeviceSet[deviceName]++
+			deviceCenter.Unlock()
+			execTXQuery(sqlUpdate, deviceCenter.DeviceSet[deviceName], deviceName)
 		}
 	}
 
-	sendPayload(w, deviceSet)
+	payLoad["deviceSet"] = deviceSet
+	payLoad["message"] = message
 
-	// If isSendPayload is true, that means we successfully started
-	// if isSendPayload {
-	// 	sendPayload(w, deviceSet)
-	// } else {
-	// 	w.WriteHeader(http.StatusNotAcceptable)
-	// 	w.Write([]byte(message))
-	// }
+	sendPayload(w, payLoad)
 }
 
 func reloadCSVHandler(w http.ResponseWriter, r *http.Request) {
@@ -347,6 +394,7 @@ func deviceStatusHandler(w http.ResponseWriter, r *http.Request) {
 	message := ""
 	deviceName := r.URL.Query().Get("deviceName")
 
+	// Return error message if no device name is sent
 	if deviceName == "" {
 		message += "Must give device name,"
 		w.WriteHeader(http.StatusNotAcceptable)
@@ -361,6 +409,13 @@ func deviceStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	if recordOK || newSetOK {
 		w.WriteHeader(http.StatusOK)
+		now := time.Now()
+		deviceCenter.Lock()
+		deviceCenter.DeviceTime[deviceName] = now
+		deviceCenter.Unlock()
+
+		timeUpdateQuery := "UPDATE device_status SET device_time=? WHERE device_status.device_name=?;"
+		execTXQuery(timeUpdateQuery, now.Format("2006-01-02 15:04:05"), deviceName)
 
 		if recordOK {
 			if record {
@@ -399,27 +454,23 @@ func sensorHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Sensor reached")
 	var deviceFile *os.File
 	var message string
-	var doesDeviceExists bool
+	isCheckedIn := false
 	timeStamp := r.Form.Get("timeStamp")
 	deviceName := strings.Split(timeStamp, ",")[0]
-
+	duration := time.Duration(-setting.TimeOut) * time.Second
 	deviceCenter.RLock()
-
-	for _, deviceCenterName := range deviceCenter.DeviceNames {
-		if deviceCenterName == deviceName {
-			doesDeviceExists = true
-		}
-	}
-
+	deviceTime, ok := deviceCenter.DeviceTime[deviceName]
 	deviceCenter.RUnlock()
 
-	// If device_name is contained in deviceCenter.DeviceNames, continue
-	// updating the database with the new info
-	// Else return message that device_name does not exist
-	if doesDeviceExists {
+	if ok {
+		isCheckedIn = deviceTime.After(time.Now().Add(duration))
+	}
+
+	// If deviceName exists in deviceCenter
+	if ok && isCheckedIn {
 		deviceCenter.RLock()
-		recording := deviceCenter.IsDeviceRecording[deviceName]
-		newSet := deviceCenter.IsNewDeviceSet[deviceName]
+		isRecording := deviceCenter.IsDeviceRecording[deviceName]
+		isNewSet := deviceCenter.IsNewDeviceSet[deviceName]
 		deviceCenter.RUnlock()
 
 		deviceCenter.Lock()
@@ -429,39 +480,28 @@ func sensorHandler(w http.ResponseWriter, r *http.Request) {
 		// If device is issued to stop recording, send message to device
 		// to stop recording
 		// Else begin/continue recording
-		if !recording {
+		if !isRecording {
 			message += "Stop Recording,"
 		} else {
 			message += "Record,"
 		}
 
-		// If device is issued to start new set, send message to device
-		// to start new set which the device will delete local file
-		// and start new
-		// Else continue current set
-		if newSet {
-			sqlUpdate := "UPDATE device_status SET is_new_set=0 WHERE device_status.device_name=?"
-			message += "New Set"
+		if isNewSet {
 			deviceCenter.Lock()
 			deviceCenter.IsNewDeviceSet[deviceName] = false
 			deviceCenter.Unlock()
-			execTXQuery(sqlUpdate, deviceName)
-		} else {
-			message += "Continue Set"
 		}
 
 		// Write message to device
 		w.Write([]byte(message))
 		sqlUpdate :=
 			"UPDATE device_status " +
-				"SET device_set=?, device_time=?, is_new_set=?, is_recording=? " +
+				"SET device_time=?, is_recording=? is_new_set=0" +
 				"WHERE device_status.device_name=?;"
 
 		execTXQuery(
 			sqlUpdate,
-			deviceCenter.DeviceSet[deviceName],
 			deviceCenter.DeviceTime[deviceName].Format("2006-01-02 15:04:05"),
-			deviceCenter.IsNewDeviceSet[deviceName],
 			deviceCenter.IsDeviceRecording[deviceName],
 			deviceName,
 		)
@@ -505,22 +545,32 @@ func updateChartHandler(w http.ResponseWriter, r *http.Request) {
 	timeMeasure := r.Form.Get("timeMeasure")
 	now := time.Now()
 
+	// Function for getting chart with hour info
 	hourPayload := func(dateTime time.Time, payload *chart) {
 		payload.TimeMeasure = "hour"
+		increment := 5
 		startingTime := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, now.Location())
-		for i := 0; i < 60; i = i + 10 {
+
+		// Loop by increment variable which is the tick marks (in minutes) that will be used
+		// for our chart
+		for i := 0; i < 60; i = i + increment {
+			// If we are on first iteration of loop, check increment of previous hour and see if
+			// dateTime falls within that time period.  If it does, add to payLoad
+			// Else check current hour within increment and if dateTime falls within, increment payLoad
 			if i == 0 {
-				previousHour := startingTime.Add(-10 * time.Minute)
+				previousHour := startingTime.Add(-time.Duration(increment) * time.Minute)
 
 				if dateTime.After(previousHour) && dateTime.Before(startingTime) {
 					payload.Axises[i]++
 				}
-			} else if dateTime.After(startingTime.Add(-10*time.Minute)) && dateTime.Before(startingTime.Add(time.Duration(i)*time.Minute)) {
+			} else if dateTime.After(startingTime.Add(-time.Duration(increment)*time.Minute)) && dateTime.Before(startingTime.Add(time.Duration(i)*time.Minute)) {
 				payload.Axises[i]++
 				break
 			}
 		}
 	}
+
+	// Function for getting chart with 24 hour info
 	dayPayload := func(dateTime time.Time, payload *chart) {
 		payload.TimeMeasure = "day"
 		startingTime := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -538,12 +588,10 @@ func updateChartHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	mu.RLock()
-	defer mu.Unlock()
-
 	fileInfoArray, err := ioutil.ReadDir("csv")
 	checkError(err, "Can't read files in directory", true)
 	chartArray := make([]*chart, len(fileInfoArray))
+	mu.RLock()
 
 	for i, fileInfo := range fileInfoArray {
 		if !fileInfo.IsDir() {
@@ -556,7 +604,7 @@ func updateChartHandler(w http.ResponseWriter, r *http.Request) {
 			for {
 				line, err := reader.ReadString('\n')
 				timeStampArray := strings.Split(line, ",")
-				movement, err := strconv.ParseBool(timeStampArray[3])
+				// movement, err := strconv.ParseBool(timeStampArray[3])
 				checkError(err, "Can't parse bool", true)
 				dateTime, timeErr := time.Parse("2006-06-01 11:20:10", timeStampArray[1]+" "+timeStampArray[2])
 
@@ -564,19 +612,19 @@ func updateChartHandler(w http.ResponseWriter, r *http.Request) {
 					dateTime = time.Now()
 				}
 
-				if movement {
-					switch timeMeasure {
-					case "hour":
-						hourPayload(dateTime, chartArray[i])
-					case "day":
-						dayPayload(dateTime, chartArray[i])
-					case "all":
-						hourPayload(dateTime, chartArray[i])
-						dayPayload(dateTime, chartArray[i])
-					default:
-						dayPayload(dateTime, chartArray[i])
-					}
+				// if movement {
+				switch timeMeasure {
+				case "hour":
+					hourPayload(dateTime, chartArray[i])
+				case "day":
+					dayPayload(dateTime, chartArray[i])
+				case "all":
+					hourPayload(dateTime, chartArray[i])
+					dayPayload(dateTime, chartArray[i])
+				default:
+					dayPayload(dateTime, chartArray[i])
 				}
+				// }
 
 				if err != nil {
 					break
@@ -585,6 +633,7 @@ func updateChartHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	mu.Unlock()
 	sendPayload(w, chartArray)
 	return
 }
