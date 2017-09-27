@@ -42,11 +42,20 @@ def _check_in_device(pi_device):
         # to write locally 
         # Else we tell current device it is signed in
         if result == "Already checked in":
+            pi_device.is_checked_in = False
             CONFIG["device"]["is_checked_in"] = "False"
             print("Device name is already in use, not sending to server but still running locally...")
         else:
+            print(result)
             pi_device.is_checked_in = True
+            pi_device.has_new_set_not_recording = result["hasNewSetNotRecording"]
+            pi_device.current_set = result["deviceSet"]
+            pi_device.is_recording = result["isRecording"]
+
             CONFIG["device"]["is_checked_in"] = "True"
+            CONFIG["device"]["has_new_set_not_recording"] = result["hasNewSetNotRecording"]
+            CONFIG["device"]["current_set"] = result["deviceSet"]
+            CONFIG["deivce"]["is_recording"] = result["isRecording"]
     
     # Reaches exception if we could not connect to server
     except Exception as e:
@@ -200,6 +209,7 @@ def init(pi_device):
         # Sleep sets the interval in which the sensors try to detect for movement
         time.sleep(pi_device.sleep)
         payload = {"password": pi_device.password}
+        print("init recording " + str(pi_device.is_recording))
 
         # If device is recording, we first check if it was recording before
         # and if it wasn't then this indicates that the device wasn't communicating 
@@ -308,6 +318,7 @@ def init(pi_device):
                 for item in response:
                     if item == "Record":
                         pi_device.is_recording = True
+                        print("Some how getting here")
                         CONFIG["device"]["is_recording"] = "True"
                     if item == "New Set" and not pi_device.has_new_set_not_recording:
                         print("new set while not recording")
@@ -368,22 +379,24 @@ if __name__ == '__main__':
                     os.remove(os.path.join("csv", pi_device.device_name + ".csv"))
                     shutil.rmtree(os.path.join("csv", "sets", pi_device.device_name))
 
-                    pi_device.has_internet = True
-                    pi_device.had_internet_before = True
-                    pi_device.has_new_set_not_recording = False
-                    pi_device.is_recording = True
-                    pi_device.current_set = 1
+                pi_device.has_internet = True
+                pi_device.had_internet_before = True
+                pi_device.has_new_set_not_recording = False
+                pi_device.is_recording = True
+                pi_device.current_set = 1
 
-                    CONFIG["device"]["has_internet"] = "True"
-                    CONFIG["device"]["had_internet_before"] = "True"
-                    CONFIG["device"]["has_new_set_not_recording"] = "False"
-                    CONFIG["device"]["is_recording"] = "True"
-                    CONFIG["device"]["device_set"] = "1"
+                CONFIG["device"]["has_internet"] = "True"
+                CONFIG["device"]["had_internet_before"] = "True"
+                CONFIG["device"]["has_new_set_not_recording"] = "False"
+                CONFIG["device"]["is_recording"] = "True"
+                CONFIG["device"]["device_set"] = "1"
 
-                    with open("client.ini", "w+") as config_file:
-                        CONFIG.write(config_file)
-                else:
-                    print("Nothing was deleted")
+                print("Getting within command line")
+
+                with open("client.ini", "w+") as config_file:
+                    CONFIG.write(config_file)
+            else:
+                print("Nothing was deleted")
 
     _init_file_system(pi_device)
     _check_in_device(pi_device)

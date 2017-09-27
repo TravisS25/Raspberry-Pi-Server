@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -26,6 +27,12 @@ func checkError(err error, message string, exit bool) {
 			os.Exit(2)
 		}
 	}
+}
+
+func unableToRetrieveFiles(w http.ResponseWriter, err error) {
+	w.WriteHeader(http.StatusInternalServerError)
+	w.Write([]byte("Could not retrieve files"))
+	checkError(err, "", false)
 }
 
 func initLogger() {
@@ -141,6 +148,7 @@ func initDatabase() {
 		"`pk`					INTEGER PRIMARY KEY AUTOINCREMENT," +
 		"`device_name`			TEXT UNIQUE," +
 		"`device_set`			INTEGER," +
+		"`lastest_set`			TEXT," +
 		"`device_time`			TEXT," +
 		"`is_new_set`			INTEGER," +
 		"`is_recording`			INTEGER," +
@@ -184,17 +192,7 @@ func initGlobalVariables() {
 
 	for rows.Next() {
 		err := rows.Scan(&deviceName, &deviceSet, &deviceTime, &isNewSet, &isRecording, &isDeviceCheckedIn)
-
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		// arrayTime := strings.Split(deviceTime, ".")
-		// convertedTime, err := time.Parse("2006-01-02 15:04:05", arrayTime[0])
-
-		// if err != nil {
-		// 	log.Fatal(err)
-		// }
+		checkError(err, "", true)
 
 		deviceCenter.DeviceNames = append(deviceCenter.DeviceNames, deviceName)
 		deviceCenter.DeviceSet[deviceName] = deviceSet
@@ -243,6 +241,16 @@ func handlePostRequests(w http.ResponseWriter, r *http.Request) (err error) {
 	}
 
 	return nil
+}
+
+func randomString(n int) string {
+	var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letterRunes[rand.Intn(len(letterRunes))]
+	}
+	return string(b)
 }
 
 // updateCheckIn will be run on a seperate go routine and will loop

@@ -33,6 +33,10 @@ func init() {
 
 func main() {
 	fmt.Println("Server running...")
+	// csv := filepath.Join(getRoot(), "csv")
+	// fs := http.FileServer(http.Dir(csv))
+	// http.Handle("/csv/", http.StripPrefix("/csv", fs))
+
 	http.HandleFunc("/", mainView)
 	http.HandleFunc("/new-set/", newSetHandler)
 	http.HandleFunc("/reload-csv/", reloadCSVHandler)
@@ -42,6 +46,9 @@ func main() {
 	http.HandleFunc("/sensor-handler/", sensorHandler)
 	http.HandleFunc("/update-chart-handler/", updateChartHandler)
 	http.HandleFunc("/check-in-handler/", deviceCheckInHandler)
+	http.HandleFunc("/download-tar/", downloadTarHandler)
+	http.HandleFunc("/generate-device-tar/", generateDeviceTarHandler)
+	http.HandleFunc("/generate-all-devices-tar/", generateAllDevicesTarHandler)
 
 	fmt.Println("here")
 	go updateCheckIn()

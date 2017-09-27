@@ -1,7 +1,9 @@
 package main
 
 import (
+	"archive/tar"
 	"bufio"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -16,7 +18,8 @@ import (
 
 // mainView displays the main html page with charts
 func mainView(w http.ResponseWriter, r *http.Request) {
-	fileInfoArray, err := ioutil.ReadDir(filepath.Join("csv", "sets"))
+	setsDirectory := filepath.Join("csv", "sets")
+	fileInfoArray, err := ioutil.ReadDir(setsDirectory)
 
 	if err != nil {
 		log.Fatal()
@@ -26,24 +29,24 @@ func mainView(w http.ResponseWriter, r *http.Request) {
 
 	for _, fileInfo := range fileInfoArray {
 		deviceName := fileInfo.Name()
-		deviceContents, err := ioutil.ReadDir(deviceName)
+		deviceContents, err := ioutil.ReadDir(setsDirectory + "/" + deviceName)
+		checkError(err, "Couldn't read dir", true)
 		fileNames := make([]string, 0)
 
-		if err != nil {
-			log.Fatal()
-		}
-
 		for _, file := range deviceContents {
-			fileNames = append(fileNames, file.Name())
+			fileName := strings.Split(file.Name(), ".")[0]
+			fileNames = append(fileNames, fileName)
 		}
 
-		cell := chartRow{
+		stringFileNames := strings.Join(fileNames, ",")
+		row := chartRow{
 			DeviceName: deviceName,
 			NumOfSets:  len(deviceContents),
-			FileNames:  fileNames,
+			FileNames:  stringFileNames,
+			LatestSet:  fileInfo.ModTime().Format("2006-01-02 15:04:05"),
 		}
 
-		chartRows = append(chartRows, cell)
+		chartRows = append(chartRows, row)
 	}
 
 	context := map[string]interface{}{
@@ -51,6 +54,164 @@ func mainView(w http.ResponseWriter, r *http.Request) {
 		"chartRows":    chartRows,
 	}
 	tpl.ExecuteTemplate(w, "index.html", context)
+}
+
+func generateDeviceTarHandler(w http.ResponseWriter, r *http.Request) {
+	err := handlePostRequests(w, r)
+
+	if err != nil {
+		return
+	}
+
+	deviceName := r.Form.Get("deviceName")
+
+	if deviceName == "" {
+		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write([]byte("Device name is required"))
+		return
+	}
+
+	deviceDirectory := filepath.Join("csv", "sets", deviceName)
+	_, err = os.Stat(deviceDirectory)
+
+	if err != nil {
+		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write([]byte("Device name does not exist"))
+		return
+	}
+
+	fileInfoArray, err := ioutil.ReadDir(deviceDirectory)
+	randomFileName := randomString(20)
+	tempFilePath := filepath.Join("/tmp", randomFileName)
+	mainFile, err := os.Create(tempFilePath + ".tar.gz")
+	if err != nil {
+		unableToRetrieveFiles(w, err)
+		return
+	}
+	defer mainFile.Close()
+	// set up the gzip writer
+	gw := gzip.NewWriter(mainFile)
+	defer gw.Close()
+	tw := tar.NewWriter(gw)
+	defer tw.Close()
+
+	for _, fileInfo := range fileInfoArray {
+		fullPath := filepath.Join(deviceDirectory, fileInfo.Name())
+		file, err := os.Open(fullPath)
+
+		if err == nil {
+			hdr := &tar.Header{
+				Name: fileInfo.Name(),
+				Mode: 0600,
+				Size: fileInfo.Size(),
+			}
+
+			if err := tw.WriteHeader(hdr); err != nil {
+				unableToRetrieveFiles(w, err)
+				return
+			}
+
+			if _, err := io.Copy(tw, file); err != nil {
+				unableToRetrieveFiles(w, err)
+				return
+			}
+			file.Close()
+		}
+	}
+
+	sendPayload(w, map[string]string{
+		"file": randomFileName,
+	})
+
+	return
+}
+
+func generateAllDevicesTarHandler(w http.ResponseWriter, r *http.Request) {
+	err := handlePostRequests(w, r)
+
+	if err != nil {
+		return
+	}
+
+	rootPath := filepath.Join("csv", "sets")
+	rootDirArray, err := ioutil.ReadDir(rootPath)
+	randomFileName := randomString(20)
+	tempFilePath := filepath.Join("/tmp", randomFileName)
+	mainFile, err := os.Create(tempFilePath + ".tar.gz")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer mainFile.Close()
+	// set up the gzip writer
+	gw := gzip.NewWriter(mainFile)
+	defer gw.Close()
+	tw := tar.NewWriter(gw)
+	defer tw.Close()
+
+	for _, dirInfo := range rootDirArray {
+		dirName := dirInfo.Name()
+		dirPath := filepath.Join(rootPath, dirName)
+		dirArray, err := ioutil.ReadDir(dirPath)
+
+		if err != nil {
+			unableToRetrieveFiles(w, err)
+			return
+		}
+
+		for _, fileInfo := range dirArray {
+			fileName := fileInfo.Name()
+			filePath := filepath.Join(dirName, fileName)
+			hdr := &tar.Header{
+				Name: filePath,
+				Mode: 0600,
+				Size: fileInfo.Size(),
+			}
+
+			if err := tw.WriteHeader(hdr); err != nil {
+				unableToRetrieveFiles(w, err)
+				return
+			}
+
+			file, err := os.Open(filepath.Join(dirPath, fileName))
+
+			if err != nil {
+				unableToRetrieveFiles(w, err)
+				return
+			}
+
+			if _, err := io.Copy(tw, file); err != nil {
+				unableToRetrieveFiles(w, err)
+				return
+			}
+		}
+	}
+
+	sendPayload(w, map[string]string{
+		"file": randomFileName,
+	})
+}
+
+func downloadTarHandler(w http.ResponseWriter, r *http.Request) {
+	fileName := r.URL.Query().Get("fileName")
+
+	if fileName == "" {
+		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write([]byte("Device name is required"))
+		return
+	}
+
+	filePath := filepath.Join("/tmp", fileName+".tar.gz")
+	file, err := os.Open(filePath)
+
+	if err != nil {
+		w.WriteHeader(http.StatusNotAcceptable)
+		return
+	}
+
+	io.Copy(w, file)
+	os.Remove(filePath)
+
+	return
 }
 
 // deviceCheckInHandler is an api endpoint that either adds new devices to our
@@ -168,9 +329,8 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 
 	var newFile *os.File
 	var message string
-	deviceSet := make(map[string]string)
-	payLoad := make(map[string]interface{})
-	sqlUpdate := "UPDATE device_status SET is_new_set=1, device_set=? WHERE device_status.device_name=?"
+	chartArray := make([]chartRow, 0)
+	sqlUpdate := "UPDATE device_status SET is_new_set=1, device_set=?, latest_set=? WHERE device_status.device_name=?"
 
 	for _, deviceName := range r.Form["new-set"] {
 		deviceCenter.RLock()
@@ -224,7 +384,12 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 					log.Fatal(err)
 				}
 
-				deviceSet[deviceName] = "1"
+				// deviceSet[deviceName] = "1"
+				chartArray = append(chartArray, chartRow{
+					DeviceName: deviceName,
+					NumOfSets:  1,
+					LatestSet:  time.Now().Format("2006-01-02 15:04:05"),
+				})
 				io.Copy(newFile, currentCSVFile)
 			} else {
 				lastFileInfo := fileInfoArray[len(fileInfoArray)-1]
@@ -242,7 +407,12 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 					log.Fatal(err)
 				}
 
-				deviceSet[deviceName] = stringFileName
+				// deviceSet[deviceName] = stringFileName
+				chartArray = append(chartArray, chartRow{
+					DeviceName: deviceName,
+					NumOfSets:  newFileName,
+					LatestSet:  time.Now().Format("2006-01-02 15:04:05"),
+				})
 				_, err = io.Copy(newFile, currentCSVFile)
 
 				if err != nil {
@@ -262,18 +432,20 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 
 			mu.Unlock()
 
+			now := time.Now()
 			deviceCenter.Lock()
 			deviceCenter.IsNewDeviceSet[deviceName] = true
 			deviceCenter.DeviceSet[deviceName]++
+			deviceCenter.LatestSet[deviceName] = now
 			deviceCenter.Unlock()
-			execTXQuery(sqlUpdate, deviceCenter.DeviceSet[deviceName], deviceName)
+			execTXQuery(sqlUpdate, deviceCenter.DeviceSet[deviceName], now.Format("2006-01-02 15:04:05"), deviceName)
 		}
 	}
 
-	payLoad["deviceSet"] = deviceSet
-	payLoad["message"] = message
-
-	sendPayload(w, payLoad)
+	sendPayload(w, map[string]interface{}{
+		"chartArray": chartArray,
+		"message":    message,
+	})
 }
 
 func reloadCSVHandler(w http.ResponseWriter, r *http.Request) {
@@ -354,12 +526,18 @@ func recordModeHandler(w http.ResponseWriter, r *http.Request) {
 func updateStatusHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("record status")
 	devicesNotHeardFrom := make(map[string]time.Time)
+	chartRows := make([]chartRow, 0)
 	deviceCenter.RLock()
 
 	for _, deviceName := range deviceCenter.DeviceNames {
 		if !deviceCenter.IsDeviceCheckedIn[deviceName] {
 			devicesNotHeardFrom[deviceName] = deviceCenter.DeviceTime[deviceName]
 		}
+		chartRows = append(chartRows, chartRow{
+			DeviceName: deviceName,
+			NumOfSets:  deviceCenter.DeviceSet[deviceName] - 1,
+			LatestSet:  deviceCenter.LatestSet[deviceName].Format("2006-01-02 15:04:05"),
+		})
 	}
 
 	deviceCenter.RUnlock()
@@ -379,7 +557,10 @@ func updateStatusHandler(w http.ResponseWriter, r *http.Request) {
 	// }
 	// fmt.Println(deviceCenter.IsDeviceCheckedIn)
 	// deviceCenter.Unlock()
-	sendPayload(w, devicesNotHeardFrom)
+	sendPayload(w, map[string]interface{}{
+		"chartRows":           chartRows,
+		"devicesNotHeardFrom": devicesNotHeardFrom,
+	})
 	return
 }
 
