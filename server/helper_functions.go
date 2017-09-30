@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"database/sql"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -11,36 +10,123 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-ini/ini"
+	"github.com/jmoiron/sqlx"
+	"github.com/mitchellh/go-homedir"
 	"github.com/pkg/errors"
 )
 
+// checkError is wrapper function to print custom error message along
+// with stack trace along with ability to choose to exit program
 func checkError(err error, message string, exit bool) {
 	if err != nil {
 		fmt.Printf("%+v\n", errors.Wrap(err, message))
-
+		log.Printf("%+v\n", errors.Wrap(err, message))
 		if exit {
 			os.Exit(2)
 		}
 	}
 }
 
+// unableToRetrieveFiles is wrapper function for sending error message
+// when we are trying to download tar files if error occurs
 func unableToRetrieveFiles(w http.ResponseWriter, err error) {
 	w.WriteHeader(http.StatusInternalServerError)
 	w.Write([]byte("Could not retrieve files"))
 	checkError(err, "", false)
 }
 
-func initLogger() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+// initFileSystem checks if project root dir exists and if it doesn't,
+// we create proper dir/files for project and ask user for default values
+// that will be written to server.ini config file
+func initFileSystem() {
+	_, err := os.Stat(projectRoot)
+
+	if err != nil {
+		os.MkdirAll(filepath.Join(setsDirectory), 0600)
+		configFile, err := os.Create(serverConfigFile)
+		checkError(err, "", true)
+		_, err = os.Create(serverDBFile)
+		checkError(err, "", true)
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Println("This is your first time running program.  We will now set some defaults.")
+		fmt.Print("Enter ip address server will be listing on (default localhost):")
+		ipAddress, _ := reader.ReadString('\n')
+		fmt.Print("Enter port number you want the server to bind to (default :8003):")
+		port, _ := reader.ReadString('\n')
+		fmt.Print("Enter password you want to use for server (default password):")
+		password, _ := reader.ReadString('\n')
+		writeToFile :=
+			"[DEFAULT] \n" +
+				"# Ip address the server is given on local network \n" +
+				"# Standard is 192.168.x.xx \n" +
+				"ip_address=" + ipAddress + " \n\n" +
+
+				"# Port that the server will listen on \n" +
+				"port=" + port + " \n\n" +
+
+				"# Password that will be used in post requests from device \n" +
+				"# Should be the same as the client.ini file \n" +
+				"password=" + password + " \n\n" +
+
+				"# Determines if requests be made over https or not \n" +
+				"# Strongly encouraged to have https as the password \n" +
+				"# above will be sent in plain text though this requires \n" +
+				"# setting up a ssl cert \n" +
+				"# This setting must be the same in the server.ini \n" +
+				"https=false \n\n" +
+
+				"# Path to cert file \n" +
+				"# If https is set to true, this has to be filled out \n" +
+				"cert_file=" + projectRoot + "/ssl/cert_file.crt \n\n" +
+
+				"# Path to key file \n" +
+				"# If https is set to true, this has to be filled out \n" +
+				"key_file=" + projectRoot + "/ssl/key_file.crt \n\n" +
+
+				"# The number (in seconds) that determines how long a device \n" +
+				"# can be inactive for before it is considered not working \n" +
+				"# and be considered not checked in \n" +
+				"# This settings should always be more than the 'sleep' setting \n" +
+				"# in client.ini \n" +
+				"time_out=5"
+
+		configFile.WriteString(writeToFile)
+	}
 }
 
+// initProjectFilePaths initiates file paths for our global variables
+func initProjectFilePaths() {
+	path, err := homedir.Dir()
+	checkError(err, "Couldn't get project root", true)
+	projectRoot = filepath.Join(path, projectName)
+	serverConfigFile = filepath.Join(projectRoot, "server.ini")
+	serverDBFile = filepath.Join(projectRoot, "server.db")
+	csvDirectory = filepath.Join(projectRoot, "csv")
+	setsDirectory = filepath.Join(csvDirectory, "sets")
+}
+
+// initLogger initiates logger and tells where to store logger file
+func initLogger() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	f, err := os.OpenFile(
+		filepath.Join(projectRoot, "rapsberry_pi_server.log"),
+		os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+
+	checkError(err, "Couldn't init logger", true)
+	defer f.Close()
+	log.SetOutput(f)
+}
+
+// loadSettingsFile loads settings from config file and assigns
+// values to our settings struct
 func loadSettingsFile() {
-	cfg, err := ini.Load("server.ini")
+	cfg, err := ini.Load(serverConfigFile)
 	checkError(err, "server.ini file not found", true)
 	defaultSection, err := cfg.GetSection("DEFAULT")
 	checkError(err, "No default section in ini file", true)
@@ -81,6 +167,8 @@ func loadSettingsFile() {
 	}
 }
 
+// commandLineArgs grabs command line arguments and sets up enviroment
+// based on arguments passed
 func commandLineArgs() {
 	wipePtr := flag.Bool("wipe", false, "Wipes out all csv files and database, basically to start fresh")
 	flag.Parse()
@@ -91,9 +179,13 @@ func commandLineArgs() {
 		text, _ := reader.ReadString('\n')
 		text = strings.TrimRight(text, "\r\n")
 		if text == "y" || text == "Y" {
-			os.RemoveAll("csv")
-			os.Remove("server.db")
-			fmt.Println("Server wiped")
+			// Extra saftey to make sure we don't delete home directory
+			homeDir, _ := homedir.Dir()
+			if projectRoot != homeDir {
+				os.RemoveAll(projectRoot)
+			} else {
+				fmt.Println("Can't delete home directory, thats dangerous!")
+			}
 		} else {
 			fmt.Println("Files not deleted")
 		}
@@ -107,6 +199,7 @@ func getRoot() string {
 	return root
 }
 
+// execTXQuery is wrapper for executing an atomic transaction againt a database
 func execTXQuery(query string, args ...interface{}) (err error) {
 	stmt, err := db.Prepare(query)
 	if err != nil {
@@ -125,40 +218,41 @@ func execTXQuery(query string, args ...interface{}) (err error) {
 		fmt.Println("doing rollback")
 		log.Println(err)
 		tx.Rollback()
-	} else {
-		tx.Commit()
+		return err
 	}
+
+	tx.Commit()
 
 	return nil
 }
 
+// initDatabase creates sqlite file and device table if they don't exist
 func initDatabase() {
-	var err error
-	serverDB := "server.db"
-	_, err = os.Stat(serverDB)
+	_, err := os.Stat(serverDBFile)
 
 	if err != nil {
-		os.Create(serverDB)
+		os.Create(serverDBFile)
 	}
 
-	db, err = sql.Open("sqlite3", serverDB)
+	db, err = sqlx.Open("sqlite3", serverDBFile)
 	checkError(err, "Connecting to database", true)
 
-	sqlQuery := "CREATE TABLE IF NOT EXISTS `device_status` (" +
+	sqlQuery := "CREATE TABLE IF NOT EXISTS `device` (" +
 		"`pk`					INTEGER PRIMARY KEY AUTOINCREMENT," +
-		"`device_name`			TEXT UNIQUE," +
-		"`device_set`			INTEGER," +
-		"`lastest_set`			TEXT," +
-		"`device_time`			TEXT," +
+		"`name`					TEXT UNIQUE," +
+		"`set_num`				INTEGER," +
+		"`lastest_set_time`		DATETIME NULL," +
+		"`latest_check_in_time`	DATETIME," +
 		"`is_new_set`			INTEGER," +
 		"`is_recording`			INTEGER," +
-		"`is_device_checked_in`	INTEGER" +
+		"`is_checked_in`		INTEGER" +
 		");"
 
 	_, err = db.Exec(sqlQuery)
 	checkError(err, "Executing query", true)
 }
 
+// initGlobalVariables initiates global variables
 func initGlobalVariables() {
 	tpl = template.Must(template.ParseGlob("templates/*.html"))
 	server = &http.Server{
@@ -166,41 +260,18 @@ func initGlobalVariables() {
 		ReadTimeout:       (2 * time.Minute),
 		ReadHeaderTimeout: (2 * time.Minute),
 	}
-	deviceCenter = &devices{
-		DeviceSet:         make(map[string]int),
-		DeviceTime:        make(map[string]time.Time),
-		IsNewDeviceSet:    make(map[string]bool),
-		IsDeviceRecording: make(map[string]bool),
-		IsDeviceCheckedIn: make(map[string]bool),
+	devices := make([]*device, 0)
+	dbQuery := "SELECT * FROM device"
+	err := db.Select(&devices, dbQuery, nil)
+	checkError(err, "Improper query", true)
+	counter := 0
+
+	for _, item := range devices {
+		counter++
+		deviceCenter.Devices[item.Name] = item
 	}
 
-	err := os.MkdirAll(setsDirectoryPath, os.ModePerm)
-	checkError(err, "Can't make directories", true)
-
-	dbQuery :=
-		"SELECT ds.device_name, ds.device_set, ds.device_time, ds.is_new_set, ds.is_recording, ds.is_device_checked_in " +
-			"FROM device_status AS ds"
-	rows, err := db.Query(dbQuery)
-	checkError(err, "Start up query error", true)
-
-	var deviceName string
-	var deviceSet int
-	var deviceTime string
-	var isNewSet bool
-	var isRecording bool
-	var isDeviceCheckedIn bool
-
-	for rows.Next() {
-		err := rows.Scan(&deviceName, &deviceSet, &deviceTime, &isNewSet, &isRecording, &isDeviceCheckedIn)
-		checkError(err, "", true)
-
-		deviceCenter.DeviceNames = append(deviceCenter.DeviceNames, deviceName)
-		deviceCenter.DeviceSet[deviceName] = deviceSet
-		deviceCenter.DeviceTime[deviceName] = time.Now()
-		deviceCenter.IsDeviceRecording[deviceName] = isRecording
-		deviceCenter.IsNewDeviceSet[deviceName] = isNewSet
-		deviceCenter.IsDeviceCheckedIn[deviceName] = isDeviceCheckedIn
-	}
+	deviceCenter.NumOfDevices = counter
 }
 
 // sendPayload is helper function that takes an empty interface
@@ -263,32 +334,24 @@ func randomString(n int) string {
 // on webpage
 func updateCheckIn() {
 	sleepDuration := time.Duration(setting.TimeOut) * time.Second
+	duration := time.Duration(-setting.TimeOut) * time.Second
 
 	for {
-		devicesNotHeardFrom := make(map[string]time.Time)
+		now := time.Now().UTC()
 		fmt.Println("update checkin")
-		deviceCenter.RLock()
+		deviceCenter.Lock()
 
-		for deviceName, deviceTime := range deviceCenter.DeviceTime {
-			duration := time.Duration(-setting.TimeOut) * time.Second
-			// if deviceTime.Before(time.Now().Add(duration)) && deviceCenter.IsDeviceRecording[deviceName] {
-			if deviceTime.Before(time.Now().Add(duration)) {
+		for deviceName, dev := range deviceCenter.Devices {
+			if dev.LatestCheckInTime.Before(now.Add(duration)) {
 				fmt.Println("not heard from " + deviceName)
-				devicesNotHeardFrom[deviceName] = deviceTime
-			} else {
-				deviceCenter.IsDeviceCheckedIn[deviceName] = true
+				query := "UPDATE device SET is_checked_in=0 WHERE name=?;"
+				err := execTXQuery(query, deviceName)
+				checkError(err, "", true)
+				deviceCenter.Devices[deviceName].IsCheckedIn = false
 			}
 		}
 
-		deviceCenter.RUnlock()
-		deviceCenter.Lock()
-
-		for deviceName := range devicesNotHeardFrom {
-			deviceCenter.IsDeviceCheckedIn[deviceName] = false
-		}
-
 		deviceCenter.Unlock()
-		fmt.Println(deviceCenter.IsDeviceCheckedIn)
 		time.Sleep(sleepDuration)
 	}
 }

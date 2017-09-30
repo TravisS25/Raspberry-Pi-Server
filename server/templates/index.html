@@ -390,7 +390,7 @@
                         $(".table-row").each(function(i, item){
                             var tableDeviceName = $(this).attr("data-device-name");
                             for(var i = 0; i < result.chartArray.length; i++){
-                                if(result.chartArray[i].deviceName == tableDeviceName){
+                                if(result.devices[i].name == tableDeviceName){
                                     $(this).find(".num-of-sets").html(result.chartArray[i].numOfSets);
                                     $(this).find(".latest-set").html(result.chartArray[i].latestSet);
                                 }

@@ -15,7 +15,9 @@ import random
 
 CONFIG = configparser.ConfigParser()
 SETS_DIRECTORY = "csv/sets"
-# CSV_FILE = "csv/client.csv"
+PROJECT_NAME = ".raspberry_pi_client"
+project_root = os.path.join(os.path.expanduser('~'), PROJECT_NAME)
+CLIENT_CONFIG_FILE = "client.ini"
 
 
 def _check_in_device(pi_device):
@@ -180,16 +182,57 @@ def _get_pi_device():
     return pi_device
 
 
-def _init_file_system(pi_device):
+def _init_file_system():
     """
     Initializes file system with proper directories and files needed
     """
-    if not os.path.isdir(os.path.join(SETS_DIRECTORY, pi_device.device_name)):
-        os.makedirs(os.path.join(SETS_DIRECTORY, pi_device.device_name))
+    print("This is the first time you are running this program.  We will now set some defaults.")
+    device_name = input("Enter device name.  NOTE - this must be unique if connecting multiple "
+    "pi devices (default Device):")
+    ip_address = input("Enter ip address of server pic device will connect to (default localhost):")
+    port = input("Enter port number the server is binded to (default :8003):")
+    password = input("Enter password that is used for server (default password):")
 
-    if not os.path.exists(pi_device.csv_file):
-        with open(pi_device.csv_file, 'w') as f:
-            pass
+    os.makedirs(os.path.join(project_root, "csv", "sets"))
+    config_file = open(os.path.join(project_root, CLIENT_CONFIG_FILE), "w+")
+    with open(os.path.join(project_root, "csv", device_name+".csv")) as f:
+        pass
+
+    if not device_name:
+        device_name = "Device"
+    if not password:
+        password = "password"
+    if not ip_address:
+        ip_address = "localhost"
+    if not port:
+        port = ":8003"
+
+    write_to_file = \
+    """
+    [DEFAULT]
+    device_name = """ + device_name + """
+    password = """ + password + """
+    ip_address = """ + ip_address + """
+    port = """ + port + """
+    sleep = 2
+    https = false
+
+    [device]
+    has_internet = True
+    had_internet_before = True
+    has_new_set_not_recording = False
+    is_recording = True
+    device_set = 1
+    is_checked_in = True
+    """
+
+    config_file.write(write_to_file)
+    # if not os.path.isdir(os.path.join(SETS_DIRECTORY, pi_device.device_name)):
+    #     os.makedirs(os.path.join(SETS_DIRECTORY, pi_device.device_name))
+
+    # if not os.path.exists(pi_device.csv_file):
+    #     with open(pi_device.csv_file, 'w') as f:
+    #         pass
 
 
 def init(pi_device):
@@ -237,12 +280,13 @@ def init(pi_device):
             time_stamp = pi_device.device_name + "," + \
                             current_date + "," + \
                             current_time + "," + \
-                            str(movement) + \
-                            "\n"
+                            str(movement) 
 
             if movement == 1:
                 with open(pi_device.csv_file, 'a') as f:
-                    f.write(time_stamp)
+                    time_stamp_array = time_stamp.split(time_stamp,",")
+                    new_time_stamp = time_stamp_array[1] + "," + time_stamp_array[2] + " \n"
+                    f.write(new_time_stamp)
                     print("Writing to file...")
 
             sensor_url = pi_device.protocol + pi_device.ip_address + "/sensor-handler/"
@@ -339,13 +383,17 @@ def init(pi_device):
 
 
 if __name__ == '__main__':
+    if not os.path.exists(project_root):
+        _init_file_system()
+
+    client_config_path = os.path.join(project_root, CLIENT_CONFIG_FILE)
     # client.ini file has to exist or program will exist
-    if not os.path.exists("client.ini"):
-        print("Must have client.ini file in root directory")
+    if not os.path.exists(client_config_path):
+        print("Must have client.ini file in project root directory")
         print("Stopping device...")
         sys.exit(2)
 
-    CONFIG.read("client.ini")
+    CONFIG.read(client_config_path)
     pi_device = _get_pi_device()
 
     # Get a list of command line arguments and determine what to 
@@ -366,28 +414,16 @@ if __name__ == '__main__':
             answer = input("You are about to delete current and all csv files.  Are you sure you want to continue? (y/n)")
             if answer == "y" or answer == "Y":
                 print("Client wiped")
-                if os.path.exists(os.path.join("csv", pi_device.device_name + ".csv")):
-                    os.remove(os.path.join("csv", pi_device.device_name + ".csv"))
-                    shutil.rmtree(os.path.join("csv", "sets", pi_device.device_name))
-
-                pi_device.has_internet = True
-                pi_device.had_internet_before = True
-                pi_device.has_new_set_not_recording = False
-                pi_device.is_recording = True
-                pi_device.current_set = 1
-
-                CONFIG["device"]["has_internet"] = "True"
-                CONFIG["device"]["had_internet_before"] = "True"
-                CONFIG["device"]["has_new_set_not_recording"] = "False"
-                CONFIG["device"]["is_recording"] = "True"
-                CONFIG["device"]["device_set"] = "1"
-
-                with open("client.ini", "w+") as config_file:
-                    CONFIG.write(config_file)
+                if os.path.exists(project_root):
+                    # Extra saftey to make sure we don't delete home directory
+                    if project_root != os.path.expanduser('~'):
+                        shutil.rmtree(project_root)
+                    else:
+                        print("Can't delete home directory, thats dangerous!")
             else:
                 print("Nothing was deleted")
 
-    _init_file_system(pi_device)
+    # _init_file_system(pi_device)
     _check_in_device(pi_device)
     init(pi_device)
 

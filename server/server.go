@@ -1,29 +1,35 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"html/template"
 	"net/http"
 	"sync"
 
+	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 var (
-	mu           sync.RWMutex
-	tpl          *template.Template
-	deviceCenter *devices
-	db           *sql.DB
-	server       *http.Server
-	setting      settings
+	mu               sync.RWMutex
+	tpl              *template.Template
+	deviceCenter     *devCenter
+	db               *sqlx.DB
+	server           *http.Server
+	setting          settings
+	projectRoot      string
+	serverDBFile     string
+	serverConfigFile string
+	csvDirectory     string
+	setsDirectory    string
 )
 
 const (
-	setsDirectoryPath = "csv/sets"
+	projectName = ".raspberry_pi_server"
 )
 
 func init() {
+	initProjectFilePaths()
 	initLogger()
 	loadSettingsFile()
 	commandLineArgs()
@@ -33,9 +39,6 @@ func init() {
 
 func main() {
 	fmt.Println("Server running...")
-	// csv := filepath.Join(getRoot(), "csv")
-	// fs := http.FileServer(http.Dir(csv))
-	// http.Handle("/csv/", http.StripPrefix("/csv", fs))
 
 	http.HandleFunc("/", mainView)
 	http.HandleFunc("/new-set/", newSetHandler)
