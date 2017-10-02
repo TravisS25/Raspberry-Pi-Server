@@ -14,10 +14,11 @@ import random
 
 
 CONFIG = configparser.ConfigParser()
-SETS_DIRECTORY = "csv/sets"
 PROJECT_NAME = ".raspberry_pi_client"
 project_root = os.path.join(os.path.expanduser('~'), PROJECT_NAME)
-CLIENT_CONFIG_FILE = "client.ini"
+client_config_file = os.path.join(project_root, "client.ini")
+csv_directory = os.path.join(project_root, "csv")
+sets_directory = os.path.join(csv_directory, "sets")
 
 
 def _check_in_device(pi_device):
@@ -34,7 +35,8 @@ def _check_in_device(pi_device):
     """
 
     payload = {"password": pi_device.password, "deviceName": pi_device.device_name}
-    check_in_url = pi_device.protocol + pi_device.ip_address + "/check-in-handler/"
+    check_in_url = pi_device.protocol + pi_device.ip_address + pi_device.port + "/check-in-handler/"
+    print("checkin url " + check_in_url)
     try:
         print("sending request to check in")
         r = requests.post(check_in_url, data=payload)
@@ -52,13 +54,14 @@ def _check_in_device(pi_device):
     
     # Reaches exception if we could not connect to server
     except Exception as e:
+        print(e)
         print("Have no internet trying to checking in but still going...")
         pi_device.has_internet = False
         pi_device.had_internet_before = False
         CONFIG["device"]["has_internet"] = "False"
         CONFIG["device"]["had_internet_before"] = "False"
 
-    with open("client.ini", "w+") as config_file:
+    with open(client_config_file, "w+") as config_file:
         CONFIG.write(config_file)
     
 
@@ -71,16 +74,23 @@ def _get_pi_device():
     
     check_file_message = "Check client.ini file or documentation for more"
     error = False
-    device_name = CONFIG["DEFAULT"]["device_name"]
-    ip_address = CONFIG["DEFAULT"]["ip_address"]
-    sleep = CONFIG["DEFAULT"]["sleep"]
-    https = CONFIG["DEFAULT"]["https"]
-    password = CONFIG["DEFAULT"]["password"]
-    has_internet = CONFIG["device"]["has_internet"]
-    had_internet_before = CONFIG["device"]["had_internet_before"]
-    has_new_set_not_recording = CONFIG["device"]["has_new_set_not_recording"]
-    is_recording = CONFIG["device"]["is_recording"]
-    device_set = CONFIG["device"]["device_set"]
+
+    try:
+        device_name = CONFIG["DEFAULT"]["device_name"]
+        ip_address = CONFIG["DEFAULT"]["ip_address"]
+        port = CONFIG["DEFAULT"]["port"]
+        sleep = CONFIG["DEFAULT"]["sleep"]
+        https = CONFIG["DEFAULT"]["https"]
+        password = CONFIG["DEFAULT"]["password"]
+        has_internet = CONFIG["device"]["has_internet"]
+        had_internet_before = CONFIG["device"]["had_internet_before"]
+        has_new_set_not_recording = CONFIG["device"]["has_new_set_not_recording"]
+        is_recording = CONFIG["device"]["is_recording"]
+        device_set = CONFIG["device"]["device_set"]
+    except KeyError as ex:
+        print(ex)
+        print("Stopping Device...")
+        sys.exit(2)
 
     # Go through each CONFIG parameter and determine if it's correct 
     if not device_name:
@@ -88,6 +98,9 @@ def _get_pi_device():
         error = True
     if not ip_address:
         print("ip_address needs to be given.  " + check_file_message)
+        error = True
+    if not port:
+        print("port needs to be given.  " + check_file_message)
         error = True
     if not sleep:
         print("sleep needs to be given.  " + check_file_message)
@@ -152,13 +165,13 @@ def _get_pi_device():
         error = True
     try:
         https = https.lower()
+
         if https == "true":
             https = True
         elif https == "false":
             https = False
         else:
-            print("https setting needs to be bool")
-            error = True
+            raise ValueError
     except ValueError as e:
         print("https should be boolean.  " + check_file_message)
         error = True
@@ -166,6 +179,8 @@ def _get_pi_device():
     if error:
         print("Stopping device...")
         sys.exit(2)
+
+    print("https " + str(https))
 
     pi_device = device.Device(
         device_name=device_name,
@@ -193,11 +208,6 @@ def _init_file_system():
     port = input("Enter port number the server is binded to (default :8003):")
     password = input("Enter password that is used for server (default password):")
 
-    os.makedirs(os.path.join(project_root, "csv", "sets"))
-    config_file = open(os.path.join(project_root, CLIENT_CONFIG_FILE), "w+")
-    with open(os.path.join(project_root, "csv", device_name+".csv")) as f:
-        pass
-
     if not device_name:
         device_name = "Device"
     if not password:
@@ -207,6 +217,12 @@ def _init_file_system():
     if not port:
         port = ":8003"
 
+    os.makedirs(sets_directory)
+    config_file = open(client_config_file, "w+")
+    csv_file = os.path.join(csv_directory, device_name + ".csv")
+    with open(csv_file, "w+") as f:
+        pass
+
     write_to_file = \
     """
     [DEFAULT]
@@ -215,7 +231,7 @@ def _init_file_system():
     ip_address = """ + ip_address + """
     port = """ + port + """
     sleep = 2
-    https = false
+    https = False
 
     [device]
     has_internet = True
@@ -227,12 +243,7 @@ def _init_file_system():
     """
 
     config_file.write(write_to_file)
-    # if not os.path.isdir(os.path.join(SETS_DIRECTORY, pi_device.device_name)):
-    #     os.makedirs(os.path.join(SETS_DIRECTORY, pi_device.device_name))
-
-    # if not os.path.exists(pi_device.csv_file):
-    #     with open(pi_device.csv_file, 'w') as f:
-    #         pass
+    config_file.close()
 
 
 def init(pi_device):
@@ -260,7 +271,7 @@ def init(pi_device):
                 print("reloading csv file")
                 with open(pi_device.csv_file, 'rb') as f:
                     payload.update({"fileName": pi_device.device_name + ".csv"})
-                    reload_url = pi_device.protocol + pi_device.ip_address + "/reload-csv/"
+                    reload_url = pi_device.protocol + pi_device.ip_address + pi_device.port + "/reload-csv/"
                     print(str(payload))
                     r = requests.post(
                         reload_url, 
@@ -284,12 +295,12 @@ def init(pi_device):
 
             if movement == 1:
                 with open(pi_device.csv_file, 'a') as f:
-                    time_stamp_array = time_stamp.split(time_stamp,",")
+                    time_stamp_array = time_stamp.split(",")
                     new_time_stamp = time_stamp_array[1] + "," + time_stamp_array[2] + " \n"
                     f.write(new_time_stamp)
                     print("Writing to file...")
 
-            sensor_url = pi_device.protocol + pi_device.ip_address + "/sensor-handler/"
+            sensor_url = pi_device.protocol + pi_device.ip_address + pi_device.port + "/sensor-handler/"
             payload.update({"timeStamp": time_stamp})
         
             try:
@@ -329,7 +340,7 @@ def init(pi_device):
                 CONFIG["device"]["has_internet"] = "False"
                 CONFIG["device"]["had_internet_before"] = "False"
 
-            with open("client.ini", "w+") as config_file:
+            with open(client_config_file, "w+") as config_file:
                 CONFIG.write(config_file)
 
         # Else device is not recording so we ping to see if status is updated
@@ -341,7 +352,7 @@ def init(pi_device):
 
             try:
                 r = requests.get(
-                    pi_device.protocol + pi_device.ip_address + "/device-status-handler/",
+                    pi_device.protocol + pi_device.ip_address + pi_device.port + "/device-status-handler/",
                     params={"deviceName": pi_device.device_name}
                 )
                 print("Not recording but still going...")
@@ -357,7 +368,7 @@ def init(pi_device):
                         CONFIG["device"]["is_recording"] = "True"
                     if item == "New Set" and not pi_device.has_new_set_not_recording:
                         print("new set while not recording")
-                        set_csv_file = os.path.join(SETS_DIRECTORY, pi_device.device_name, str(pi_device.current_set) + ".csv")
+                        set_csv_file = os.path.join(csv_directory, pi_device.device_name, str(pi_device.current_set) + ".csv")
                         # print("previous current set " + str(pi_device.current_set))
                         pi_device.current_set = pi_device.current_set + 1
                         # print("new current set " + str(pi_device.current_set))
@@ -378,22 +389,24 @@ def init(pi_device):
                 CONFIG["device"]["had_internet_before"]
                 print("Not recording and no internet but still going...")
 
-            with open("client.ini", "w+") as config_file:
+            with open(client_config_file, "w+") as config_file:
                 CONFIG.write(config_file)
+
+
+def read_config_file():
+    # client.ini file has to exist or program will exist
+    if not os.path.exists(client_config_file):
+        print("Must have client.ini file in project root directory")
+        print("Stopping device...")
+        sys.exit(2)
+
+    CONFIG.read(client_config_file)
 
 
 if __name__ == '__main__':
     if not os.path.exists(project_root):
         _init_file_system()
-
-    client_config_path = os.path.join(project_root, CLIENT_CONFIG_FILE)
-    # client.ini file has to exist or program will exist
-    if not os.path.exists(client_config_path):
-        print("Must have client.ini file in project root directory")
-        print("Stopping device...")
-        sys.exit(2)
-
-    CONFIG.read(client_config_path)
+    read_config_file()
     pi_device = _get_pi_device()
 
     # Get a list of command line arguments and determine what to 
@@ -423,7 +436,6 @@ if __name__ == '__main__':
             else:
                 print("Nothing was deleted")
 
-    # _init_file_system(pi_device)
     _check_in_device(pi_device)
     init(pi_device)
 

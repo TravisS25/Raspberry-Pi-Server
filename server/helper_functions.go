@@ -48,7 +48,7 @@ func initFileSystem() {
 	_, err := os.Stat(projectRoot)
 
 	if err != nil {
-		os.MkdirAll(filepath.Join(setsDirectory), 0600)
+		os.MkdirAll(filepath.Join(setsDirectory), os.ModePerm)
 		configFile, err := os.Create(serverConfigFile)
 		checkError(err, "", true)
 		_, err = os.Create(serverDBFile)
@@ -61,6 +61,21 @@ func initFileSystem() {
 		port, _ := reader.ReadString('\n')
 		fmt.Print("Enter password you want to use for server (default password):")
 		password, _ := reader.ReadString('\n')
+
+		ipAddress = strings.TrimSpace(ipAddress)
+		port = strings.TrimSpace(port)
+		password = strings.TrimSpace(password)
+
+		if ipAddress == "" {
+			ipAddress = "localhost"
+		}
+		if port == "" {
+			port = ":8003"
+		}
+		if password == "" {
+			password = "password"
+		}
+
 		writeToFile :=
 			"[DEFAULT] \n" +
 				"# Ip address the server is given on local network \n" +
@@ -113,10 +128,12 @@ func initProjectFilePaths() {
 
 // initLogger initiates logger and tells where to store logger file
 func initLogger() {
+	serverLog := filepath.Join(projectRoot, "rapsberry_pi_server.log")
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	f, err := os.OpenFile(
-		filepath.Join(projectRoot, "rapsberry_pi_server.log"),
-		os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	f, err := os.Create(serverLog)
+	// f, err := os.OpenFile(
+	// 	filepath.Join(projectRoot, "rapsberry_pi_server.log"),
+	// 	os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 
 	checkError(err, "Couldn't init logger", true)
 	defer f.Close()
@@ -241,8 +258,8 @@ func initDatabase() {
 		"`pk`					INTEGER PRIMARY KEY AUTOINCREMENT," +
 		"`name`					TEXT UNIQUE," +
 		"`set_num`				INTEGER," +
-		"`lastest_set_time`		DATETIME NULL," +
-		"`latest_check_in_time`	DATETIME," +
+		"`latest_set_time`		TEXT NULL," +
+		"`latest_check_in_time`	TEXT," +
 		"`is_new_set`			INTEGER," +
 		"`is_recording`			INTEGER," +
 		"`is_checked_in`		INTEGER" +
@@ -260,7 +277,8 @@ func initGlobalVariables() {
 		ReadTimeout:       (2 * time.Minute),
 		ReadHeaderTimeout: (2 * time.Minute),
 	}
-	devices := make([]*device, 0)
+	devices := make([]device, 0)
+	deviceMap := make(map[string]*device)
 	dbQuery := "SELECT * FROM device"
 	err := db.Select(&devices, dbQuery, nil)
 	checkError(err, "Improper query", true)
@@ -268,10 +286,13 @@ func initGlobalVariables() {
 
 	for _, item := range devices {
 		counter++
-		deviceCenter.Devices[item.Name] = item
+		deviceMap[item.Name] = &item
 	}
 
-	deviceCenter.NumOfDevices = counter
+	deviceCenter = &devCenter{
+		NumOfDevices: counter,
+		Devices:      deviceMap,
+	}
 }
 
 // sendPayload is helper function that takes an empty interface
@@ -342,7 +363,10 @@ func updateCheckIn() {
 		deviceCenter.Lock()
 
 		for deviceName, dev := range deviceCenter.Devices {
-			if dev.LatestCheckInTime.Before(now.Add(duration)) {
+			latestCheckInTime, err := time.ParseInLocation("2006-01-02 15:04:05", dev.LatestCheckInTime, time.UTC)
+			checkError(err, "Error parsing time", true)
+
+			if latestCheckInTime.Before(now.Add(duration)) {
 				fmt.Println("not heard from " + deviceName)
 				query := "UPDATE device SET is_checked_in=0 WHERE name=?;"
 				err := execTXQuery(query, deviceName)

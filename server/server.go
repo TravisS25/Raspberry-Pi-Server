@@ -20,8 +20,9 @@ var (
 	projectRoot      string
 	serverDBFile     string
 	serverConfigFile string
-	csvDirectory     string
-	setsDirectory    string
+	// serverLog        string
+	csvDirectory  string
+	setsDirectory string
 )
 
 const (
@@ -30,6 +31,7 @@ const (
 
 func init() {
 	initProjectFilePaths()
+	initFileSystem()
 	initLogger()
 	loadSettingsFile()
 	commandLineArgs()

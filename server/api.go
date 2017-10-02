@@ -69,7 +69,7 @@ func generateDeviceTarHandler(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			hdr := &tar.Header{
 				Name: fileInfo.Name(),
-				Mode: 0600,
+				Mode: 0666,
 				Size: fileInfo.Size(),
 			}
 
@@ -128,7 +128,7 @@ func generateAllDevicesTarHandler(w http.ResponseWriter, r *http.Request) {
 			filePath := filepath.Join(dirName, fileName)
 			hdr := &tar.Header{
 				Name: filePath,
-				Mode: 0600,
+				Mode: 0666,
 				Size: fileInfo.Size(),
 			}
 
@@ -205,7 +205,7 @@ func deviceCheckInHandler(w http.ResponseWriter, r *http.Request) {
 		now := time.Now().UTC()
 
 		deviceCenter.Lock()
-		deviceCenter.Devices[dev.Name].LatestCheckInTime = now
+		deviceCenter.Devices[dev.Name].LatestCheckInTime = now.Format("2006-01-02 15:04:05")
 		deviceCenter.Devices[dev.Name].IsCheckedIn = true
 		deviceCenter.Unlock()
 
@@ -213,13 +213,13 @@ func deviceCheckInHandler(w http.ResponseWriter, r *http.Request) {
 		checkError(err, "Update query error", true)
 	} else {
 		sqlStatement =
-			"INSERT INTO device_status (name, set_num, latest_set_time, latest_check_in_time, is_new_set, is_recording, is_checked_in) " +
-				"VALUES (?,?,?,?,?,?,?);"
+			"INSERT INTO device (name, set_num, latest_check_in_time, is_new_set, is_recording, is_checked_in) " +
+				"VALUES (?,?,?,?,?,?);"
 
 		deviceCenter.Lock()
-		now := time.Now().UTC()
-		deviceCenter.Devices[dev.Name] = &device{
-			Name:              dev.Name,
+		now := time.Now().Format("2006-01-02 15:04:05")
+		deviceCenter.Devices[deviceName] = &device{
+			Name:              deviceName,
 			SetNum:            1,
 			LatestCheckInTime: now,
 			IsNewSet:          false,
@@ -233,7 +233,7 @@ func deviceCheckInHandler(w http.ResponseWriter, r *http.Request) {
 
 	// If current request is from new device, create directory with device
 	// name under the sets directory
-	err = os.MkdirAll(filepath.Join(setsDirectory, deviceName), 0600)
+	err = os.MkdirAll(filepath.Join(setsDirectory, deviceName), 0666)
 	checkError(err, "Can't make sets directory", true)
 }
 
@@ -279,7 +279,7 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			now := time.Now().UTC()
+			now := time.Now().Format("2006-01-02 15:04:05")
 			mu.Lock()
 			currentCSVFilePath := filepath.Join(csvDirectory, deviceName+".csv")
 			deviceSetDirectory := filepath.Join(setsDirectory, deviceName)
@@ -312,7 +312,7 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 
 				setNum++
 				stringFileName := strconv.Itoa(setNum)
-				newFile, err := os.OpenFile(filepath.Join(deviceSetDirectory, stringFileName+".csv"), os.O_WRONLY|os.O_CREATE, 0600)
+				newFile, err := os.OpenFile(filepath.Join(deviceSetDirectory, stringFileName+".csv"), os.O_WRONLY|os.O_CREATE, 0666)
 				checkError(err, "", true)
 
 				deviceArray = append(deviceArray, device{
@@ -370,7 +370,7 @@ func reloadCSVHandler(w http.ResponseWriter, r *http.Request) {
 	defer mu.Unlock()
 	pathToFile := filepath.Join(csvDirectory, handler.Filename)
 	os.Remove(pathToFile)
-	f, err := os.OpenFile(pathToFile, os.O_WRONLY|os.O_CREATE, 0600)
+	f, err := os.OpenFile(pathToFile, os.O_WRONLY|os.O_CREATE, 0666)
 	checkError(err, "", true)
 	defer f.Close()
 	io.Copy(f, file)
@@ -435,7 +435,9 @@ func updateStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	for _, dev := range deviceCenter.Devices {
 		if !dev.IsCheckedIn {
-			devicesNotHeardFrom[dev.Name] = dev.LatestCheckInTime
+			latestCheckInTime, err := time.Parse("2006-01-02 15:04:05", dev.LatestCheckInTime)
+			checkError(err, "Error parsing time", true)
+			devicesNotHeardFrom[dev.Name] = latestCheckInTime
 		}
 	}
 
@@ -470,7 +472,7 @@ func deviceStatusHandler(w http.ResponseWriter, r *http.Request) {
 
 	if deviceExists {
 		w.WriteHeader(http.StatusOK)
-		now := time.Now().UTC()
+		now := time.Now().Format("2006-01-02 15:04:05")
 		timeUpdateQuery := "UPDATE device SET latest_check_in_time=? WHERE name=?;"
 		err := execTXQuery(timeUpdateQuery, now, deviceName)
 		checkError(err, "", true)
@@ -539,7 +541,7 @@ func sensorHandler(w http.ResponseWriter, r *http.Request) {
 
 		sqlUpdate :=
 			"UPDATE device " +
-				"SET latest_check_in_time=?, is_recording=? is_new_set=0 " +
+				"SET latest_check_in_time=?, is_recording=?, is_new_set=0 " +
 				"WHERE name=?;"
 
 		err = execTXQuery(
