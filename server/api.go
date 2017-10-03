@@ -20,7 +20,8 @@ func mainView(w http.ResponseWriter, r *http.Request) {
 	context := map[string]interface{}{
 		"deviceCenter": deviceCenter,
 	}
-	tpl.ExecuteTemplate(w, "index.html", context)
+	indexPath := filepath.Join(templatesDirectory, "index.html")
+	tpl.ExecuteTemplate(w, indexPath, context)
 }
 
 func generateDeviceTarHandler(w http.ResponseWriter, r *http.Request) {
@@ -191,6 +192,7 @@ func deviceCheckInHandler(w http.ResponseWriter, r *http.Request) {
 	var sqlStatement string
 	deviceName := r.Form.Get("deviceName")
 	dev, deviceExists := deviceCenter.Devices[deviceName]
+	now := time.Now().UTC()
 
 	// If device already exists, update database
 	// Else insert the new device into database with default values
@@ -202,10 +204,8 @@ func deviceCheckInHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		sqlStatement = "UPDATE device SET latest_check_in_time=?, is_checked_in=1 WHERE name=?"
-		now := time.Now().UTC()
-
 		deviceCenter.Lock()
-		deviceCenter.Devices[dev.Name].LatestCheckInTime = now.Format("2006-01-02 15:04:05")
+		deviceCenter.Devices[dev.Name].LatestCheckInTime = now
 		deviceCenter.Devices[dev.Name].IsCheckedIn = true
 		deviceCenter.Unlock()
 
@@ -217,17 +217,16 @@ func deviceCheckInHandler(w http.ResponseWriter, r *http.Request) {
 				"VALUES (?,?,?,?,?,?);"
 
 		deviceCenter.Lock()
-		now := time.Now().Format("2006-01-02 15:04:05")
 		deviceCenter.Devices[deviceName] = &device{
 			Name:              deviceName,
-			SetNum:            1,
+			SetNum:            0,
 			LatestCheckInTime: now,
 			IsNewSet:          false,
 			IsRecording:       true,
 			IsCheckedIn:       true,
 		}
 		deviceCenter.Unlock()
-		err := execTXQuery(sqlStatement, deviceName, 1, now, 0, 1, 1)
+		err := execTXQuery(sqlStatement, deviceName, 0, now, 0, 1, 1)
 		checkError(err, "", true)
 	}
 
@@ -279,7 +278,7 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			now := time.Now().Format("2006-01-02 15:04:05")
+			now := time.Now().UTC()
 			mu.Lock()
 			currentCSVFilePath := filepath.Join(csvDirectory, deviceName+".csv")
 			deviceSetDirectory := filepath.Join(setsDirectory, deviceName)
@@ -300,7 +299,7 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 				deviceArray = append(deviceArray, device{
 					Name:          deviceName,
 					SetNum:        1,
-					LatestSetTime: now,
+					LatestSetTime: &now,
 				})
 
 				_, err := io.Copy(newFile, currentCSVFile)
@@ -318,7 +317,7 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 				deviceArray = append(deviceArray, device{
 					Name:          deviceName,
 					SetNum:        setNum,
-					LatestSetTime: now,
+					LatestSetTime: &now,
 				})
 				_, err = io.Copy(newFile, currentCSVFile)
 				checkError(err, "", true)
@@ -339,7 +338,7 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 			deviceCenter.Lock()
 			deviceCenter.Devices[deviceName].IsNewSet = true
 			deviceCenter.Devices[deviceName].SetNum++
-			deviceCenter.Devices[deviceName].LatestSetTime = now
+			deviceCenter.Devices[deviceName].LatestSetTime = &now
 			deviceCenter.Unlock()
 		}
 	}
@@ -404,17 +403,18 @@ func recordModeHandler(w http.ResponseWriter, r *http.Request) {
 	isRecording, _ := strconv.ParseBool(record)
 	devicesRecordStatus := make(map[string]bool)
 	sqlUpdate := "UPDATE device SET is_recording=? WHERE name=?"
-	deviceCenter.Lock()
 
 	for _, deviceName := range r.Form["record-device"] {
+		deviceCenter.RLock()
 		device, deviceExists := deviceCenter.Devices[deviceName]
+		deviceCenter.RUnlock()
 
 		if deviceExists {
 			if (device.IsRecording && !isRecording) || (!device.IsRecording && isRecording) {
 				err = execTXQuery(sqlUpdate, isRecording, deviceName)
 				checkError(err, "", true)
 				deviceCenter.Lock()
-				deviceCenter.Devices[deviceName].IsRecording = true
+				deviceCenter.Devices[deviceName].IsRecording = isRecording
 				deviceCenter.Unlock()
 			}
 
@@ -431,17 +431,15 @@ func recordModeHandler(w http.ResponseWriter, r *http.Request) {
 func updateStatusHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("record status")
 	devicesNotHeardFrom := make(map[string]time.Time)
-	deviceCenter.RLock()
 
 	for _, dev := range deviceCenter.Devices {
 		if !dev.IsCheckedIn {
-			latestCheckInTime, err := time.Parse("2006-01-02 15:04:05", dev.LatestCheckInTime)
-			checkError(err, "Error parsing time", true)
-			devicesNotHeardFrom[dev.Name] = latestCheckInTime
+			deviceCenter.Lock()
+			devicesNotHeardFrom[dev.Name] = dev.LatestCheckInTime
+			deviceCenter.Unlock()
 		}
 	}
 
-	deviceCenter.RUnlock()
 	sendPayload(w, devicesNotHeardFrom)
 
 	return
@@ -467,18 +465,19 @@ func deviceStatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deviceCenter.RLock()
-	_, deviceExists := deviceCenter.Devices[deviceName]
+	dev, deviceExists := deviceCenter.Devices[deviceName]
 	deviceCenter.RUnlock()
 
 	if deviceExists {
 		w.WriteHeader(http.StatusOK)
-		now := time.Now().Format("2006-01-02 15:04:05")
+		now := time.Now().UTC()
 		timeUpdateQuery := "UPDATE device SET latest_check_in_time=? WHERE name=?;"
 		err := execTXQuery(timeUpdateQuery, now, deviceName)
 		checkError(err, "", true)
 
 		deviceCenter.Lock()
 		deviceCenter.Devices[deviceName].LatestCheckInTime = now
+		deviceCenter.Devices[deviceName].IsRecording = dev.IsRecording
 		deviceCenter.Unlock()
 	} else {
 		w.WriteHeader(http.StatusNotFound)
@@ -533,10 +532,12 @@ func sensorHandler(w http.ResponseWriter, r *http.Request) {
 	deviceCenter.RUnlock()
 
 	if deviceExists {
+		now := time.Now().UTC()
+
 		if dev.IsRecording {
 			message += "Record,"
 		} else {
-			message += "Stop Record,"
+			message += "Stop Recording,"
 		}
 
 		sqlUpdate :=
@@ -546,17 +547,20 @@ func sensorHandler(w http.ResponseWriter, r *http.Request) {
 
 		err = execTXQuery(
 			sqlUpdate,
-			deviceCenter.Devices[deviceName].LatestCheckInTime,
+			now,
 			dev.IsRecording,
 			deviceName,
 		)
 		checkError(err, "", true)
+		deviceCenter.Lock()
+		deviceCenter.Devices[deviceName].LatestCheckInTime = now
+		deviceCenter.Devices[deviceName].IsRecording = dev.IsRecording
 
 		if dev.IsNewSet {
-			deviceCenter.Lock()
 			deviceCenter.Devices[deviceName].IsNewSet = false
-			deviceCenter.Unlock()
 		}
+
+		deviceCenter.Unlock()
 
 		deviceFilePath := filepath.Join(csvDirectory, deviceName+".csv")
 		checkError(err, "Can't parse bool", true)
@@ -578,9 +582,10 @@ func sensorHandler(w http.ResponseWriter, r *http.Request) {
 				checkError(err, "Can't open file", true)
 				deviceFile.WriteString(newTimeStamp)
 			}
-
 			defer deviceFile.Close()
 		}
+
+		w.Write([]byte(message))
 	} else {
 		w.WriteHeader(http.StatusNotAcceptable)
 		w.Write([]byte("Device does not exist"))
@@ -659,7 +664,7 @@ func updateChartHandler(w http.ResponseWriter, r *http.Request) {
 				dateTime, timeErr := time.ParseInLocation("2006-01-02 15:04:05", timeStampArray[0]+" "+timeStampArray[1], time.UTC)
 
 				if timeErr != nil {
-					dateTime = time.Now()
+					dateTime = time.Now().UTC()
 				}
 
 				switch timeMeasure {

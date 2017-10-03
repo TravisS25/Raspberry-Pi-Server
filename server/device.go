@@ -2,6 +2,7 @@ package main
 
 import (
 	"sync"
+	"time"
 )
 
 // type devices struct {
@@ -28,14 +29,14 @@ import (
 // }
 
 type device struct {
-	Pk                int     `json:"pk" db:"pk"`
-	Name              string  `json:"name" db:"name"`
-	SetNum            int     `json:"setNum" db:"set_num"`
-	LatestSetTime     *string `json:"latestSetTime" db:"latest_set_time"`
-	LatestCheckInTime string  `json:"latestCheckInTime" db:"latest_check_in_time"`
-	IsNewSet          bool    `json:"isNewSet" db:"is_new_set"`
-	IsRecording       bool    `json:"isRecording" db:"is_recording"`
-	IsCheckedIn       bool    `json:"isCheckedIn" db:"is_checked_in"`
+	Pk                int        `json:"pk" db:"pk"`
+	Name              string     `json:"name" db:"name"`
+	SetNum            int        `json:"setNum" db:"set_num"`
+	LatestSetTime     *time.Time `json:"latestSetTime" db:"latest_set_time"`
+	LatestCheckInTime time.Time  `json:"latestCheckInTime" db:"latest_check_in_time"`
+	IsNewSet          bool       `json:"isNewSet" db:"is_new_set"`
+	IsRecording       bool       `json:"isRecording" db:"is_recording"`
+	IsCheckedIn       bool       `json:"isCheckedIn" db:"is_checked_in"`
 }
 
 type devCenter struct {
@@ -58,9 +59,15 @@ type chart struct {
 // }
 
 type settings struct {
-	IPAddress string
-	Port      string
-	Password  string
-	HTTPS     bool
-	TimeOut   int64
+	IPAddress          string
+	Port               string
+	Password           string
+	HTTPS              bool
+	TimeOut            int64
+	ProjectRoot        string
+	ServerDBFile       string
+	ServerConfigFile   string
+	TemplatesDirectory string
+	CsvDirectory       string
+	SetsDirectory      string
 }

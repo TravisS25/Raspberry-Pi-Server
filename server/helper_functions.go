@@ -124,7 +124,24 @@ func initProjectFilePaths() {
 	serverDBFile = filepath.Join(projectRoot, "server.db")
 	csvDirectory = filepath.Join(projectRoot, "csv")
 	setsDirectory = filepath.Join(csvDirectory, "sets")
+	templatesDirectory = filepath.Join(projectRoot, "templates")
 }
+
+// func initSettings() {
+// 	path, err := homedir.Dir()
+// 	checkError(err, "Couldn't get project root", true)
+// 	projectRoot := filepath.Join(path, projectName)
+// 	csvDirectory := filepath.Join(projectRoot, "csv")
+
+// 	setting = &settings{
+// 		ProjectRoot:        projectRoot,
+// 		ServerConfigFile:   filepath.Join(projectRoot, "server.ini"),
+// 		ServerDBFile:       filepath.Join(projectRoot, "server.db"),
+// 		CsvDirectory:       filepath.Join(projectRoot, "csv"),
+// 		SetsDirectory:      filepath.Join(csvDirectory, "sets"),
+// 		TemplatesDirectory: filepath.Join(projectRoot, "templates"),
+// 	}
+// }
 
 // initLogger initiates logger and tells where to store logger file
 func initLogger() {
@@ -258,8 +275,8 @@ func initDatabase() {
 		"`pk`					INTEGER PRIMARY KEY AUTOINCREMENT," +
 		"`name`					TEXT UNIQUE," +
 		"`set_num`				INTEGER," +
-		"`latest_set_time`		TEXT NULL," +
-		"`latest_check_in_time`	TEXT," +
+		"`latest_set_time`		DATETIME NULL," +
+		"`latest_check_in_time`	DATETIME," +
 		"`is_new_set`			INTEGER," +
 		"`is_recording`			INTEGER," +
 		"`is_checked_in`		INTEGER" +
@@ -360,22 +377,20 @@ func updateCheckIn() {
 	for {
 		now := time.Now().UTC()
 		fmt.Println("update checkin")
-		deviceCenter.Lock()
 
 		for deviceName, dev := range deviceCenter.Devices {
-			latestCheckInTime, err := time.ParseInLocation("2006-01-02 15:04:05", dev.LatestCheckInTime, time.UTC)
-			checkError(err, "Error parsing time", true)
-
-			if latestCheckInTime.Before(now.Add(duration)) {
+			latestCheckinTime := dev.LatestCheckInTime
+			if latestCheckinTime.Before(now.Add(duration)) {
 				fmt.Println("not heard from " + deviceName)
 				query := "UPDATE device SET is_checked_in=0 WHERE name=?;"
 				err := execTXQuery(query, deviceName)
 				checkError(err, "", true)
+				deviceCenter.Lock()
 				deviceCenter.Devices[deviceName].IsCheckedIn = false
+				deviceCenter.Unlock()
 			}
 		}
 
-		deviceCenter.Unlock()
 		time.Sleep(sleepDuration)
 	}
 }

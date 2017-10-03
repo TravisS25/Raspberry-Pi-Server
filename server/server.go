@@ -11,18 +11,19 @@ import (
 )
 
 var (
-	mu               sync.RWMutex
-	tpl              *template.Template
-	deviceCenter     *devCenter
-	db               *sqlx.DB
-	server           *http.Server
-	setting          settings
-	projectRoot      string
-	serverDBFile     string
-	serverConfigFile string
-	// serverLog        string
-	csvDirectory  string
-	setsDirectory string
+	mu           sync.RWMutex
+	tpl          *template.Template
+	deviceCenter *devCenter
+	db           *sqlx.DB
+	server       *http.Server
+	// setting            *settings
+	setting            settings
+	projectRoot        string
+	serverDBFile       string
+	serverConfigFile   string
+	templatesDirectory string
+	csvDirectory       string
+	setsDirectory      string
 )
 
 const (
@@ -32,6 +33,7 @@ const (
 func init() {
 	initProjectFilePaths()
 	initFileSystem()
+	createIndexPage()
 	initLogger()
 	loadSettingsFile()
 	commandLineArgs()

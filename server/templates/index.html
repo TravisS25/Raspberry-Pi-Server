@@ -55,14 +55,14 @@
                                     <input type="checkbox" class="record-device" id=record-all name="record-device-all" value="All"> All 
                                     <hr /> 
                                 </div>
-                                {{ range $index, $value := .deviceCenter.IsDeviceRecording }}
+                                {{ range $deviceName, $device := .deviceCenter.Devices }}
                                     <div class="col-md-12">
-                                        <input type="checkbox" class="record-device" name="record-device" value="{{$index}}"> {{$index}}
+                                        <input type="checkbox" class="record-device" name="record-device" value="{{ $deviceName }}"> {{ $deviceName }}
     
-                                        {{ if $value }}
-                                            <span class="pull-right"> Mode: <span class="mode-text" data-device-name="{{$index}}" style="color:green">Recording</span></span>
+                                        {{ if $device.IsRecording }}
+                                            <span class="pull-right"> Mode: <span class="mode-text" data-device-name="{{ $deviceName }}" style="color:green">Recording</span></span>
                                         {{ else }}
-                                            <span class="pull-right"> Mode: <span class="mode-text" data-device-name="{{$index}}" style="color:red">Not Recording</span></span>
+                                            <span class="pull-right"> Mode: <span class="mode-text" data-device-name="{{ $deviceName }}" style="color:red">Not Recording</span></span>
                                         {{ end }}
                                     </div> 
                                 {{ end }}
@@ -83,10 +83,9 @@
                                     <input type="checkbox" id=new-set-all name="new-set-all"> All 
                                     <hr />
                                 </div>
-                                {{ range $index, $value := .deviceCenter.DeviceSet }}
+                                {{ range $deviceName, $device := .deviceCenter.Devices }}
                                     <div class="col-md-12">
-                                        <input type="checkbox" class="new-set" name="new-set" value="{{$index}}"> {{$index}}
-                                        <!-- <span class="pull-right">Set: <span class="new-set-text" data-new-set-device="{{ $index }}">{{ $value }}</span></span> -->
+                                        <input type="checkbox" class="new-set" name="new-set" value="{{ $deviceName }}"> {{ $deviceName }}
                                     </div> 
                                 {{ end }}
                                 <div class="col-md-12">
@@ -107,21 +106,23 @@
                                 <!-- <th><input type="checkbox" id="check-all-sets" /></th> -->
                                 <th>Device Name</th>
                                 <th># of Sets</th>
-                                <th>Last Set</th>
+                                <th>Lastest Set Time</th>
                                 <th></th>
                             </tr>
-                            {{ range $index, $row := .chartRows }}
-                                <tr class="table-row" data-device-name="{{ $row.DeviceName }}">
-                                    <!-- <td><input type="checkbox" class="device-set" value="{{ $row.DeviceName }}" /></td> -->
-                                    <td>{{ $row.DeviceName }}</td>
-                                    <td class="num-of-sets">{{ $row.NumOfSets }}</td>
-                                    <td class="latest-set">{{ $row.LatestSet }}</td>
+                            {{ range $deviceName, $device := .deviceCenter.Devices }}
+                                <tr class="table-row" data-device-name="{{ $deviceName }}">
+                                    <td>{{ $deviceName }}</td>
+                                    <td class="num-of-sets">{{ $device.SetNum }}</td>
+                                    <td class="latest-set">
+                                        {{ if $device.LatestSetTime }}
+                                            {{ $device.LatestSetTime }}
+                                        {{ else }}
+                                            N/A
+                                        {{ end }}
+                                    </td>
                                     <td>
-                                        <!-- <button class="btn btn-success device-set-button" value="{{ $row.DeviceName }}" data-file-name-list="[{{ $row.FileNames }}]">
-                                            Device Sets
-                                        </button> -->
                                         <form class="form-inline device-form">
-                                            <input type="hidden" class="device-name" name="deviceName" value="{{ $row.DeviceName }}" />
+                                            <input type="hidden" class="device-name" name="deviceName" value="{{ $deviceName }}" />
                                             <div class="form-group">
                                                 <input type="text" name="password" placeholder="Password" class="form-control password">
                                             </div>

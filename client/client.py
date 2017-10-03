@@ -316,6 +316,7 @@ def init(pi_device):
                     r = requests.post(sensor_url, payload)
                     print("Sending to server...")
                     response = str(r._content.decode("utf-8")).split(",")
+                    print("response " + str(response))
 
                     for item in response:
                         if item == "Stop Recording":
