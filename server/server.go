@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"os"
 	"sync"
 
 	"github.com/jmoiron/sqlx"
@@ -16,24 +17,17 @@ var (
 	deviceCenter *devCenter
 	db           *sqlx.DB
 	server       *http.Server
-	// setting            *settings
-	setting            settings
-	projectRoot        string
-	serverDBFile       string
-	serverConfigFile   string
-	templatesDirectory string
-	csvDirectory       string
-	setsDirectory      string
+	setting      *settings
 )
 
 const (
 	projectName = ".raspberry_pi_server"
+	fileMode    = os.FileMode(0700)
 )
 
 func init() {
-	initProjectFilePaths()
+	initSettings()
 	initFileSystem()
-	createIndexPage()
 	initLogger()
 	loadSettingsFile()
 	commandLineArgs()

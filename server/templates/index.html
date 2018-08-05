@@ -264,6 +264,17 @@
             });
         }
 
+        function formatSetDates(){
+            $(".latest-set").each(function(i, item){
+                var date = $(this).html();
+
+                if(date != "N/A"){
+                    var newDate = new Date(date);
+                    $(this).html(moment(newDate).format("YYYY-MM-DD HH:mm:ss"));
+                }
+            });
+        }
+
         function modalDownloadButtonHandler(){
             // $("#modal-download").on("click", function(e){
             //     var serialize = $("#modal-form").serialize();
@@ -372,7 +383,6 @@
                     method: "POST",
                     data: serialize,
                     success: function(result){
-                        toastr.success("New set created for selected devices");
                         $("#new-set-password").val("");
                         $("#new-set-all").prop('checked', false);
                         $(".new-set").each(function(i, item){
@@ -382,18 +392,22 @@
                         console.log(result);
 
                         if(result.message != "" && result.message != null){
+                            toastr.warning("Something is not right, check warning section for details");
                             $("#device-message").html(result.message);
                         }
                         else{
+                            toastr.success("New set created for selected devices");
                             $("#device-message").html("");
                         }
 
                         $(".table-row").each(function(i, item){
                             var tableDeviceName = $(this).attr("data-device-name");
-                            for(var i = 0; i < result.chartArray.length; i++){
-                                if(result.devices[i].name == tableDeviceName){
-                                    $(this).find(".num-of-sets").html(result.chartArray[i].numOfSets);
-                                    $(this).find(".latest-set").html(result.chartArray[i].latestSet);
+                            for(var i = 0; i < result.deviceArray.length; i++){
+                                if(result.deviceArray[i].name == tableDeviceName){
+                                    var date = new Date(result.deviceArray[i].latestSetTime);
+                                    var newDate = moment(date).format("YYYY-MM-DD HH:mm:ss");
+                                    $(this).find(".num-of-sets").html(result.deviceArray[i].setNum);
+                                    $(this).find(".latest-set").html(newDate);
                                 }
                             }
                         });
@@ -424,7 +438,7 @@
                     else{
                         for (var property in result) {
                             if (result.hasOwnProperty(property)) {
-                                displayString += "Last heard device '" + property + "' at " + moment(result[property]).format("MM/DD/YYYY H:mm:ss") + " <br />";
+                                displayString += "Last heard device '" + property + "' at " + moment(result[property]).format("YYYY-MM-DD HH:mm:ss") + " <br />";
                                 console.log(result[property]);
                             }
                         }
@@ -663,6 +677,7 @@
             modalDownloadButtonHandler();
             deviceModalHandler();
             substractSet();
+            formatSetDates();
             // getData("all");
             window.setInterval(statusesHandler, 3000);
         });

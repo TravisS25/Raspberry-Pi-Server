@@ -369,7 +369,12 @@ def init(pi_device):
                         CONFIG["device"]["is_recording"] = "True"
                     if item == "New Set" and not pi_device.has_new_set_not_recording:
                         print("new set while not recording")
-                        set_csv_file = os.path.join(csv_directory, pi_device.device_name, str(pi_device.current_set) + ".csv")
+                        set_csv_file = os.path.join(sets_directory, str(pi_device.current_set) + ".csv")
+                        
+                        # Simply creating new set file that we will copy current csv contents to
+                        with open(set_csv_file, "w+"):
+                            pass
+
                         # print("previous current set " + str(pi_device.current_set))
                         pi_device.current_set = pi_device.current_set + 1
                         # print("new current set " + str(pi_device.current_set))

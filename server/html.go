@@ -1,18 +1,8 @@
 package main
 
-import (
-	"os"
-	"path/filepath"
-)
+func getIndexPage() string {
 
-func createIndexPage() {
-	err := os.MkdirAll(templatesDirectory, os.ModePerm)
-	checkError(err, "Error creating template directory", true)
-
-	file, err := os.Create(filepath.Join(templatesDirectory, "index.html"))
-	checkError(err, "Error creating index.html", true)
-
-	writeToFile :=
+	html :=
 		`
 	<!DOCTYPE html>
 	<html lang="en">
@@ -686,5 +676,5 @@ func createIndexPage() {
 	
 	</html>
 	`
-	file.WriteString(writeToFile)
+	return html
 }

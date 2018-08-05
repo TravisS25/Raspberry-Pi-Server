@@ -20,8 +20,7 @@ func mainView(w http.ResponseWriter, r *http.Request) {
 	context := map[string]interface{}{
 		"deviceCenter": deviceCenter,
 	}
-	indexPath := filepath.Join(templatesDirectory, "index.html")
-	tpl.ExecuteTemplate(w, indexPath, context)
+	tpl.ExecuteTemplate(w, "index.html", context)
 }
 
 func generateDeviceTarHandler(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +38,7 @@ func generateDeviceTarHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deviceDirectory := filepath.Join(setsDirectory, deviceName)
+	deviceDirectory := filepath.Join(setting.SetsDirectory, deviceName)
 	_, err = os.Stat(deviceDirectory)
 
 	if err != nil {
@@ -70,7 +69,7 @@ func generateDeviceTarHandler(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			hdr := &tar.Header{
 				Name: fileInfo.Name(),
-				Mode: 0666,
+				Mode: int64(fileMode),
 				Size: fileInfo.Size(),
 			}
 
@@ -101,7 +100,7 @@ func generateAllDevicesTarHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rootDirArray, err := ioutil.ReadDir(setsDirectory)
+	rootDirArray, err := ioutil.ReadDir(setting.SetsDirectory)
 	checkError(err, "", true)
 	randomFileName := randomString(20)
 	tempFilePath := filepath.Join("/tmp", randomFileName)
@@ -116,7 +115,7 @@ func generateAllDevicesTarHandler(w http.ResponseWriter, r *http.Request) {
 
 	for _, dirInfo := range rootDirArray {
 		dirName := dirInfo.Name()
-		dirPath := filepath.Join(setsDirectory, dirName)
+		dirPath := filepath.Join(setting.SetsDirectory, dirName)
 		dirArray, err := ioutil.ReadDir(dirPath)
 
 		if err != nil {
@@ -129,7 +128,7 @@ func generateAllDevicesTarHandler(w http.ResponseWriter, r *http.Request) {
 			filePath := filepath.Join(dirName, fileName)
 			hdr := &tar.Header{
 				Name: filePath,
-				Mode: 0666,
+				Mode: int64(fileMode),
 				Size: fileInfo.Size(),
 			}
 
@@ -232,7 +231,7 @@ func deviceCheckInHandler(w http.ResponseWriter, r *http.Request) {
 
 	// If current request is from new device, create directory with device
 	// name under the sets directory
-	err = os.MkdirAll(filepath.Join(setsDirectory, deviceName), 0666)
+	err = os.MkdirAll(filepath.Join(setting.SetsDirectory, deviceName), os.ModePerm)
 	checkError(err, "Can't make sets directory", true)
 }
 
@@ -278,10 +277,11 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			now := time.Now().UTC()
+			// now, _ := time.Parse("2006-01-02 15:04:05", time.Now().Format("2006-01-02 15:04:05"))
+			now := time.Now()
 			mu.Lock()
-			currentCSVFilePath := filepath.Join(csvDirectory, deviceName+".csv")
-			deviceSetDirectory := filepath.Join(setsDirectory, deviceName)
+			currentCSVFilePath := filepath.Join(setting.CsvDirectory, deviceName+".csv")
+			deviceSetDirectory := filepath.Join(setting.SetsDirectory, deviceName)
 			fileInfoArray, err := ioutil.ReadDir(deviceSetDirectory)
 			checkError(err, "Couldn't read device directory", true)
 
@@ -293,7 +293,8 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 			// Else calculate what the next file name should be.  Since file names
 			// are just numbers, we just simply increment from the last file name
 			if len(fileInfoArray) == 0 {
-				newFile, err = os.OpenFile(filepath.Join(deviceSetDirectory, "1.csv"), os.O_WRONLY|os.O_CREATE, os.ModePerm)
+				// newFile, err = os.OpenFile(filepath.Join(deviceSetDirectory, "1.csv"), os.O_WRONLY|os.O_CREATE, os.ModePerm)
+				newFile, err = os.Create(filepath.Join(deviceSetDirectory, "1.csv"))
 				checkError(err, "", true)
 
 				deviceArray = append(deviceArray, device{
@@ -311,7 +312,8 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 
 				setNum++
 				stringFileName := strconv.Itoa(setNum)
-				newFile, err := os.OpenFile(filepath.Join(deviceSetDirectory, stringFileName+".csv"), os.O_WRONLY|os.O_CREATE, 0666)
+				// newFile, err := os.OpenFile(filepath.Join(deviceSetDirectory, stringFileName+".csv"), os.O_WRONLY|os.O_CREATE, 0666)
+				newFile, err := os.Create(filepath.Join(deviceSetDirectory, stringFileName+".csv"))
 				checkError(err, "", true)
 
 				deviceArray = append(deviceArray, device{
@@ -331,21 +333,21 @@ func newSetHandler(w http.ResponseWriter, r *http.Request) {
 			checkError(err, "", true)
 			mu.Unlock()
 
-			dev.SetNum++
-			err = execTXQuery(sqlUpdate, dev.SetNum, now, deviceName)
+			newSetNum := dev.SetNum + 1
+			err = execTXQuery(sqlUpdate, newSetNum, now, deviceName)
 			checkError(err, "", true)
 
 			deviceCenter.Lock()
 			deviceCenter.Devices[deviceName].IsNewSet = true
-			deviceCenter.Devices[deviceName].SetNum++
+			deviceCenter.Devices[deviceName].SetNum = newSetNum
 			deviceCenter.Devices[deviceName].LatestSetTime = &now
 			deviceCenter.Unlock()
 		}
 	}
 
 	sendPayload(w, map[string]interface{}{
-		"devices": devices,
-		"message": message,
+		"deviceArray": deviceArray,
+		"message":     message,
 	})
 }
 
@@ -367,9 +369,9 @@ func reloadCSVHandler(w http.ResponseWriter, r *http.Request) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	pathToFile := filepath.Join(csvDirectory, handler.Filename)
+	pathToFile := filepath.Join(setting.CsvDirectory, handler.Filename)
 	os.Remove(pathToFile)
-	f, err := os.OpenFile(pathToFile, os.O_WRONLY|os.O_CREATE, 0666)
+	f, err := os.OpenFile(pathToFile, os.O_WRONLY|os.O_CREATE, fileMode)
 	checkError(err, "", true)
 	defer f.Close()
 	io.Copy(f, file)
@@ -406,11 +408,11 @@ func recordModeHandler(w http.ResponseWriter, r *http.Request) {
 
 	for _, deviceName := range r.Form["record-device"] {
 		deviceCenter.RLock()
-		device, deviceExists := deviceCenter.Devices[deviceName]
+		dev, deviceExists := deviceCenter.Devices[deviceName]
 		deviceCenter.RUnlock()
 
 		if deviceExists {
-			if (device.IsRecording && !isRecording) || (!device.IsRecording && isRecording) {
+			if (dev.IsRecording && !isRecording) || (!dev.IsRecording && isRecording) {
 				err = execTXQuery(sqlUpdate, isRecording, deviceName)
 				checkError(err, "", true)
 				deviceCenter.Lock()
@@ -469,16 +471,31 @@ func deviceStatusHandler(w http.ResponseWriter, r *http.Request) {
 	deviceCenter.RUnlock()
 
 	if deviceExists {
+		if !dev.IsCheckedIn {
+			message += "Not Checked In,"
+			w.WriteHeader(http.StatusNotAcceptable)
+			w.Write([]byte(message))
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		now := time.Now().UTC()
-		timeUpdateQuery := "UPDATE device SET latest_check_in_time=? WHERE name=?;"
-		err := execTXQuery(timeUpdateQuery, now, deviceName)
+		timeUpdateQuery := "UPDATE device SET latest_check_in_time=?, is_recording=?, is_new_set=? WHERE name=?;"
+		err := execTXQuery(timeUpdateQuery, now, dev.IsRecording, dev.IsNewSet, deviceName)
 		checkError(err, "", true)
 
 		deviceCenter.Lock()
 		deviceCenter.Devices[deviceName].LatestCheckInTime = now
 		deviceCenter.Devices[deviceName].IsRecording = dev.IsRecording
+		deviceCenter.Devices[deviceName].IsNewSet = dev.IsNewSet
 		deviceCenter.Unlock()
+
+		if dev.IsRecording {
+			message += "Record,"
+		}
+
+		if dev.IsNewSet {
+			message += "New Set,"
+		}
 	} else {
 		w.WriteHeader(http.StatusNotFound)
 		message += "Device name does not exist"
@@ -531,7 +548,7 @@ func sensorHandler(w http.ResponseWriter, r *http.Request) {
 	dev, deviceExists := deviceCenter.Devices[deviceName]
 	deviceCenter.RUnlock()
 
-	if deviceExists {
+	if deviceExists && dev.IsCheckedIn {
 		now := time.Now().UTC()
 
 		if dev.IsRecording {
@@ -562,7 +579,7 @@ func sensorHandler(w http.ResponseWriter, r *http.Request) {
 
 		deviceCenter.Unlock()
 
-		deviceFilePath := filepath.Join(csvDirectory, deviceName+".csv")
+		deviceFilePath := filepath.Join(setting.CsvDirectory, deviceName+".csv")
 		checkError(err, "Can't parse bool", true)
 		_, deviceErr := os.Stat(deviceFilePath)
 
@@ -588,7 +605,7 @@ func sensorHandler(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(message))
 	} else {
 		w.WriteHeader(http.StatusNotAcceptable)
-		w.Write([]byte("Device does not exist"))
+		w.Write([]byte("Device does not exist or is not checked in"))
 	}
 
 	return
@@ -645,7 +662,7 @@ func updateChartHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	fileInfoArray, err := ioutil.ReadDir(csvDirectory)
+	fileInfoArray, err := ioutil.ReadDir(setting.CsvDirectory)
 	checkError(err, "Can't read files in directory", true)
 	chartArray := make([]*chart, len(fileInfoArray))
 	mu.RLock()
@@ -653,7 +670,7 @@ func updateChartHandler(w http.ResponseWriter, r *http.Request) {
 	for i, fileInfo := range fileInfoArray {
 		if !fileInfo.IsDir() {
 			chartArray[i].DeviceName = fileInfo.Name()
-			csvFile := filepath.Join(csvDirectory, fileInfo.Name()+".csv")
+			csvFile := filepath.Join(setting.CsvDirectory, fileInfo.Name()+".csv")
 			file, err := os.Open(csvFile)
 			checkError(err, "Can't open csv file", true)
 			reader := bufio.NewReader(file)

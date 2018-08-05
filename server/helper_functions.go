@@ -45,13 +45,20 @@ func unableToRetrieveFiles(w http.ResponseWriter, err error) {
 // we create proper dir/files for project and ask user for default values
 // that will be written to server.ini config file
 func initFileSystem() {
-	_, err := os.Stat(projectRoot)
+	_, err := os.Stat(setting.ProjectRoot)
 
 	if err != nil {
-		os.MkdirAll(filepath.Join(setsDirectory), os.ModePerm)
-		configFile, err := os.Create(serverConfigFile)
+		err := os.MkdirAll(setting.TemplatesDirectory, os.ModePerm)
+		checkError(err, "Error creating template directory", true)
+
+		indexFile, err := os.Create(filepath.Join(setting.TemplatesDirectory, "index.html"))
+		checkError(err, "Error creating index.html", true)
+
+		indexFile.WriteString(getIndexPage())
+		os.MkdirAll(filepath.Join(setting.SetsDirectory), os.ModePerm)
+		configFile, err := os.Create(setting.ServerConfigFile)
 		checkError(err, "", true)
-		_, err = os.Create(serverDBFile)
+		_, err = os.Create(setting.ServerDBFile)
 		checkError(err, "", true)
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Println("This is your first time running program.  We will now set some defaults.")
@@ -98,11 +105,11 @@ func initFileSystem() {
 
 				"# Path to cert file \n" +
 				"# If https is set to true, this has to be filled out \n" +
-				"cert_file=" + projectRoot + "/ssl/cert_file.crt \n\n" +
+				"cert_file=" + setting.ProjectRoot + "/ssl/cert_file.crt \n\n" +
 
 				"# Path to key file \n" +
 				"# If https is set to true, this has to be filled out \n" +
-				"key_file=" + projectRoot + "/ssl/key_file.crt \n\n" +
+				"key_file=" + setting.ProjectRoot + "/ssl/key_file.crt \n\n" +
 
 				"# The number (in seconds) that determines how long a device \n" +
 				"# can be inactive for before it is considered not working \n" +
@@ -116,36 +123,36 @@ func initFileSystem() {
 }
 
 // initProjectFilePaths initiates file paths for our global variables
-func initProjectFilePaths() {
-	path, err := homedir.Dir()
-	checkError(err, "Couldn't get project root", true)
-	projectRoot = filepath.Join(path, projectName)
-	serverConfigFile = filepath.Join(projectRoot, "server.ini")
-	serverDBFile = filepath.Join(projectRoot, "server.db")
-	csvDirectory = filepath.Join(projectRoot, "csv")
-	setsDirectory = filepath.Join(csvDirectory, "sets")
-	templatesDirectory = filepath.Join(projectRoot, "templates")
-}
-
-// func initSettings() {
+// func initProjectFilePaths() {
 // 	path, err := homedir.Dir()
 // 	checkError(err, "Couldn't get project root", true)
-// 	projectRoot := filepath.Join(path, projectName)
-// 	csvDirectory := filepath.Join(projectRoot, "csv")
-
-// 	setting = &settings{
-// 		ProjectRoot:        projectRoot,
-// 		ServerConfigFile:   filepath.Join(projectRoot, "server.ini"),
-// 		ServerDBFile:       filepath.Join(projectRoot, "server.db"),
-// 		CsvDirectory:       filepath.Join(projectRoot, "csv"),
-// 		SetsDirectory:      filepath.Join(csvDirectory, "sets"),
-// 		TemplatesDirectory: filepath.Join(projectRoot, "templates"),
-// 	}
+// 	projectRoot = filepath.Join(path, projectName)
+// 	serverConfigFile = filepath.Join(projectRoot, "server.ini")
+// 	serverDBFile = filepath.Join(projectRoot, "server.db")
+// 	csvDirectory = filepath.Join(projectRoot, "csv")
+// 	setsDirectory = filepath.Join(csvDirectory, "sets")
+// 	templatesDirectory = filepath.Join(projectRoot, "templates")
 // }
+
+func initSettings() {
+	path, err := homedir.Dir()
+	checkError(err, "Couldn't get project root", true)
+	projectRoot := filepath.Join(path, projectName)
+	csvDirectory := filepath.Join(projectRoot, "csv")
+
+	setting = &settings{
+		ProjectRoot:        projectRoot,
+		ServerConfigFile:   filepath.Join(projectRoot, "server.ini"),
+		ServerDBFile:       filepath.Join(projectRoot, "server.db"),
+		CsvDirectory:       filepath.Join(projectRoot, "csv"),
+		SetsDirectory:      filepath.Join(csvDirectory, "sets"),
+		TemplatesDirectory: filepath.Join(projectRoot, "templates"),
+	}
+}
 
 // initLogger initiates logger and tells where to store logger file
 func initLogger() {
-	serverLog := filepath.Join(projectRoot, "rapsberry_pi_server.log")
+	serverLog := filepath.Join(setting.ProjectRoot, "rapsberry_pi_server.log")
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	f, err := os.Create(serverLog)
 	// f, err := os.OpenFile(
@@ -160,7 +167,7 @@ func initLogger() {
 // loadSettingsFile loads settings from config file and assigns
 // values to our settings struct
 func loadSettingsFile() {
-	cfg, err := ini.Load(serverConfigFile)
+	cfg, err := ini.Load(setting.ServerConfigFile)
 	checkError(err, "server.ini file not found", true)
 	defaultSection, err := cfg.GetSection("DEFAULT")
 	checkError(err, "No default section in ini file", true)
@@ -192,13 +199,11 @@ func loadSettingsFile() {
 
 	}
 
-	setting = settings{
-		IPAddress: ipAddress.Value(),
-		Port:      port.Value(),
-		Password:  password.Value(),
-		HTTPS:     boolHTTPS,
-		TimeOut:   intTimeOut,
-	}
+	setting.IPAddress = ipAddress.Value()
+	setting.Port = port.Value()
+	setting.Password = password.Value()
+	setting.HTTPS = boolHTTPS
+	setting.TimeOut = intTimeOut
 }
 
 // commandLineArgs grabs command line arguments and sets up enviroment
@@ -215,8 +220,8 @@ func commandLineArgs() {
 		if text == "y" || text == "Y" {
 			// Extra saftey to make sure we don't delete home directory
 			homeDir, _ := homedir.Dir()
-			if projectRoot != homeDir {
-				os.RemoveAll(projectRoot)
+			if setting.ProjectRoot != homeDir {
+				os.RemoveAll(setting.ProjectRoot)
 			} else {
 				fmt.Println("Can't delete home directory, thats dangerous!")
 			}
@@ -262,13 +267,13 @@ func execTXQuery(query string, args ...interface{}) (err error) {
 
 // initDatabase creates sqlite file and device table if they don't exist
 func initDatabase() {
-	_, err := os.Stat(serverDBFile)
+	_, err := os.Stat(setting.ServerDBFile)
 
 	if err != nil {
-		os.Create(serverDBFile)
+		os.Create(setting.ServerDBFile)
 	}
 
-	db, err = sqlx.Open("sqlite3", serverDBFile)
+	db, err = sqlx.Open("sqlite3", setting.ServerDBFile)
 	checkError(err, "Connecting to database", true)
 
 	sqlQuery := "CREATE TABLE IF NOT EXISTS `device` (" +
@@ -289,6 +294,7 @@ func initDatabase() {
 // initGlobalVariables initiates global variables
 func initGlobalVariables() {
 	tpl = template.Must(template.ParseGlob("templates/*.html"))
+	// tpl = template.Must(template.ParseGlob(filepath.Join(setting.TemplatesDirectory, "*.html")))
 	server = &http.Server{
 		Addr:              setting.IPAddress + setting.Port,
 		ReadTimeout:       (2 * time.Minute),
@@ -303,6 +309,7 @@ func initGlobalVariables() {
 
 	for _, item := range devices {
 		counter++
+		item.LatestCheckInTime = time.Now()
 		deviceMap[item.Name] = &item
 	}
 
